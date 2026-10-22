@@ -14,6 +14,7 @@ import {
   BookOpen,
   Send,
   Calendar,
+  Clock,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -115,6 +116,16 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         >
           <Calendar size={16} /> Calendar
         </button>
+
+        {user.departmentId && (
+          <button
+            id="tab-leaves"
+            className={`nav-tab-btn ${activeTab === 'leaves' ? 'active' : ''}`}
+            onClick={() => setActiveTab('leaves')}
+          >
+            <Clock size={16} /> Leaves
+          </button>
+        )}
 
         {user.departmentId && (
           <button

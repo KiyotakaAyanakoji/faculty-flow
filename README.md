@@ -1,7 +1,7 @@
 # Faculty Flow 2.0
 
 > Modern Academic Operations & Faculty Management System
-> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers** • **Phase 5: Academic Calendar, Events & Secure PDF Uploads**
+> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers** • **Phase 5: Academic Calendar, Events & Secure PDF Uploads** • **Phase 6: Leave Management**
 
 Faculty Flow 2.0 is an enterprise-grade academic operations platform designed for higher education institutions. This repository features a modular, decoupled full-stack architecture built with React 19 (Vite + TypeScript), Node.js (Express + TypeScript), and MySQL.
 
@@ -15,10 +15,10 @@ The codebase is organized as an npm workspaces monorepo:
 faculty_flow/
 ├── client/                     # Frontend Application (React 19 + Vite + TypeScript)
 │   ├── src/
-│   │   ├── components/         # UI components (DashboardView, TaskManagementView, SyllabusManagementView, HandoverManagementView, CalendarManagementView, LoginForm, Navbar, HealthCard, etc.)
+│   │   ├── components/         # UI components (LeaveManagementView, CalendarManagementView, DashboardView, TaskManagementView, SyllabusManagementView, HandoverManagementView, LoginForm, Navbar, HealthCard)
 │   │   ├── context/            # AuthContext & useAuth session hook
-│   │   ├── test/               # Vitest + React Testing Library suites (App, Dashboard, Tasks, Syllabus, Handovers, Calendar)
-│   │   ├── types/              # Client auth, department, task, dashboard, syllabus, handover, and event type definitions
+│   │   ├── test/               # Vitest + React Testing Library suites (App, Dashboard, Tasks, Syllabus, Handovers, Calendar, Leaves)
+│   │   ├── types/              # Client auth, department, task, dashboard, syllabus, handover, event, and leave type definitions
 │   │   ├── App.tsx             # Root authenticated shell, role-based navigation tabs, and public landing
 │   │   ├── App.css             # Modern dark-mode responsive layout and glassmorphism styling
 │   │   ├── index.css           # Design tokens, color system, and resets
@@ -32,22 +32,23 @@ faculty_flow/
 ├── server/                     # Backend API Application (Node.js + Express + TypeScript)
 │   ├── src/
 │   │   ├── config/             # Zod environment validation & MySQL connection pool
-│   │   ├── constants/          # Role definitions, RBAC policies, task priorities, statuses, event categories
-│   │   ├── controllers/        # Dashboard, Task, Syllabus, Handover, Event, Auth, User, Department, Health controllers
+│   │   ├── constants/          # Role definitions, RBAC policies, task priorities, event categories, leave types & statuses
+│   │   ├── controllers/        # Leave, Event, Dashboard, Task, Syllabus, Handover, Auth, User, Department, Health controllers
 │   │   ├── db/                 # Transactional migration runner, seed script, SQL files
 │   │   │   ├── migrations/
 │   │   │   │   ├── 001_initial_schema.sql            # Schema migration tracker & system metadata
 │   │   │   │   ├── 002_auth_and_rbac.sql             # Departments, Users, Tokens, Audit Logs
 │   │   │   │   ├── 003_tasks_and_assignments.sql     # Tasks, Assignments, Statuses, Deadlines
 │   │   │   │   ├── 004_syllabus_and_handovers.sql    # Syllabuses, Units, Faculty Handovers, Task Linkages
-│   │   │   │   └── 005_academic_calendar_and_documents.sql # Academic Events, Attendees, Secure PDF Attachments
+│   │   │   │   ├── 005_academic_calendar_and_documents.sql # Academic Events, Attendees, Secure PDF Attachments
+│   │   │   │   └── 006_leave_management.sql          # Leave Types, Balances, Requests, Audit Records
 │   │   │   ├── migrate.ts                            # Migration runner
 │   │   │   └── seed.ts                               # Safe development database seeder
 │   │   ├── middleware/         # Auth verification, RBAC guards, rate limiter, upload/magic bytes, error handlers
-│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks, /dashboard, /syllabus, /handovers, /events)
+│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks, /dashboard, /syllabus, /handovers, /events, /leaves)
 │   │   ├── services/           # JWT & DB-backed refresh token service, audit logging, safe storage service
-│   │   ├── types/              # Server user, token, task, dashboard, syllabus, handover, event Express typings
-│   │   ├── validators/         # Zod schemas for input validation (auth, user, task, syllabus, handover, event)
+│   │   ├── types/              # Server user, token, task, dashboard, syllabus, handover, event, leave Express typings
+│   │   ├── validators/         # Zod schemas for input validation (auth, user, task, syllabus, handover, event, leave)
 │   │   ├── app.ts              # Express application factory & middleware chain
 │   │   └── index.ts            # Server entry point with DB check & graceful shutdown
 │   ├── test/                   # Vitest + Supertest backend test suites
@@ -58,6 +59,7 @@ faculty_flow/
 │   │   ├── syllabus.test.ts    # Course syllabus management, progress tracking & isolation (Phase 4)
 │   │   ├── handovers.test.ts   # Faculty handover lifecycle, task linkage & permissions (Phase 4)
 │   │   ├── events.test.ts      # Academic calendar, attendee validation, secure PDF uploads & magic bytes (Phase 5)
+│   │   ├── leaves.test.ts      # Faculty leave management, concurrency, row-locking & RBAC (Phase 6)
 │   │   └── health.test.ts      # Phase 1 health check smoke tests
 │   ├── uploads/                # Private local storage directory for secured PDF attachments (.gitignored)
 │   ├── .env.example            # Server environment template
@@ -183,15 +185,64 @@ faculty_flow/
     - `uploader_id` (FK -> `users.id` ON DELETE RESTRICT): Faculty member who uploaded the document.
     - `created_at` / `updated_at` (TIMESTAMP): Audit timestamps.
     - **Indexes**: `(event_id)`, `(uploader_id)`.
-11. **`schema_migrations`**:
-    - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`, `005`) with transaction rollback safety.
+11. **`leave_types`** (Phase 6):
+    - `id` (INT PK AI): Unique leave type identifier.
+    - `code` (VARCHAR(50) UNIQUE): Canonical code (`CASUAL`, `SICK`, `EARNED`, `UNPAID`).
+    - `name` (VARCHAR(100)): Descriptive name (e.g., Casual Leave, Sick / Medical Leave).
+    - `description` (TEXT): Policy notes.
+    - `is_paid` (BOOLEAN DEFAULT TRUE): Paid or unpaid (LWP) classification.
+    - `default_days_per_year` (DECIMAL(5,1) DEFAULT 0.0): Configurable annual institutional quota.
+    - `requires_approval` (BOOLEAN DEFAULT TRUE): Flag requiring approver workflow.
+    - `allow_half_day` (BOOLEAN DEFAULT TRUE): Supports half-day applications.
+    - `created_at` / `updated_at` (TIMESTAMP): Audit timestamps.
+12. **`leave_balances`** (Phase 6):
+    - `id` (INT PK AI): Unique balance entry identifier.
+    - `user_id` (FK -> `users.id` ON DELETE CASCADE): Faculty member.
+    - `leave_type_id` (FK -> `leave_types.id` ON DELETE RESTRICT): Associated leave type.
+    - `academic_year` (VARCHAR(50)): Academic year term (e.g., `2026-2027`).
+    - `entitled_days` (DECIMAL(5,1) DEFAULT 0.0): Allocated days for year.
+    - `used_days` (DECIMAL(5,1) DEFAULT 0.0): Approved and deducted days.
+    - `pending_days` (DECIMAL(5,1) DEFAULT 0.0): Temporarily reserved days for awaiting requests.
+    - `created_at` / `updated_at` (TIMESTAMP): Audit timestamps.
+    - **Constraints**: `UNIQUE KEY (user_id, leave_type_id, academic_year)`, `INDEX (user_id, academic_year)`.
+13. **`leave_requests`** (Phase 6):
+    - `id` (INT PK AI): Unique request identifier.
+    - `user_id` (FK -> `users.id` ON DELETE RESTRICT): Server-derived authenticated faculty requester.
+    - `department_id` (FK -> `departments.id` ON DELETE RESTRICT): Departmental isolation boundary.
+    - `leave_type_id` (FK -> `leave_types.id` ON DELETE RESTRICT): Requested leave policy type.
+    - `start_date` / `end_date` (DATE): Requested calendar dates (`YYYY-MM-DD`).
+    - `days_count` (DECIMAL(5,1)): Calculated duration in working days (excluding Sundays).
+    - `is_half_day` (BOOLEAN DEFAULT FALSE): Half-day toggle flag.
+    - `half_day_period` (ENUM('First Half', 'Second Half') NULL): Period when half-day is selected.
+    - `reason` (TEXT): Mandatory statement for absence.
+    - `status` (ENUM('Pending', 'Approved', 'Rejected', 'Cancelled') DEFAULT 'Pending'): Canonical state.
+    - `approver_id` (FK -> `users.id` ON DELETE SET NULL): Designated HOD decision-maker.
+    - `decision_notes` (TEXT NULL): Rationalization or reason recorded by approver or canceller.
+    - `decision_timestamp` (TIMESTAMP NULL): Decision audit timestamp.
+    - `created_at` / `updated_at` (TIMESTAMP): Audit timestamps.
+    - **Indexes**: `(department_id, status)`, `(user_id, status)`, `(start_date, end_date)`.
+14. **`leave_audit_logs`** (Phase 6):
+    - `id` (INT PK AI): Unique balance adjustment audit log.
+    - `user_id` (FK -> `users.id` ON DELETE CASCADE): Faculty member whose balance was affected.
+    - `leave_type_id` (FK -> `leave_types.id` ON DELETE RESTRICT): Affected leave type.
+    - `request_id` (FK -> `leave_requests.id` ON DELETE SET NULL): Linked leave request.
+    - `academic_year` (VARCHAR(50)): Academic year term.
+    - `action` (ENUM('ALLOCATION', 'RESERVATION', 'RESERVATION_RELEASE', 'DEDUCTION', 'RESTORATION', 'ADMIN_ADJUSTMENT')): Action type.
+    - `days_changed` (DECIMAL(5,1)): Quantity changed (+ or -).
+    - `previous_used_days` / `new_used_days` (DECIMAL(5,1)): Balance tracking.
+    - `previous_pending_days` / `new_pending_days` (DECIMAL(5,1)): Reservation tracking.
+    - `reason` (VARCHAR(255)): Human-readable audit note.
+    - `actor_id` (FK -> `users.id` ON DELETE SET NULL): User triggering the action.
+    - `created_at` (TIMESTAMP): Event timestamp.
+15. **`schema_migrations`**:
+    - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`, `005`, `006`) with transaction rollback safety.
 
 ### Migration Commands
 ```bash
-# Run pending migrations (applies 001, 002, 003, 004, and 005)
+# Run pending migrations (applies 001, 002, 003, 004, 005, and 006)
 npm run db:migrate
 
-# Seed development departments and test accounts
+# Seed development departments, faculty test accounts, and leave entitlements
 npm run db:seed
 ```
 
@@ -200,6 +251,22 @@ npm run db:seed
 ---
 
 ## 🔌 API Endpoints Summary
+
+### Faculty Leave Management (`/api/leaves`) (Phase 6)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/leaves/types` | Authenticated | Lists configured institutional leave types, quotas, paid/unpaid flags, and half-day policies. |
+| `GET` | `/api/leaves/balances` | Authenticated | Retrieves current authenticated faculty member's leave entitlements, used days, reserved pending days, and available balances. |
+| `GET` | `/api/leaves/my` | Authenticated | Lists authenticated faculty member's leave requests with optional status filter (`status=Pending\|Approved\|Rejected\|Cancelled`). |
+| `POST` | `/api/leaves` | Authenticated | Submits a new leave request. Atomically validates entitlement and reserves pending days via row-locking transaction. |
+| `GET` | `/api/leaves/calculate` | Authenticated | Computes effective working days duration excluding Sundays based on institutional date policy. |
+| `GET` | `/api/leaves/approvals` | HOD Scope | Lists departmental leave requests awaiting decision in the HOD's assigned department. |
+| `GET` | `/api/leaves/department-summary` | HOD Scope | Returns departmental leave metrics (pending, approved, rejected, on-leave-today) and recent leaves. |
+| `GET` | `/api/leaves/:id` | Scoped Auth | Retrieves detailed leave request record with approver info and decision notes (Requester, HOD, or Admin). |
+| `POST` | `/api/leaves/:id/decision` | HOD Scope | HOD approves or rejects departmental leave. Applies atomic balance deduction or reservation release. Self-approval strictly forbidden. |
+| `POST` | `/api/leaves/:id/cancel` | Requester Scope | Cancels an eligible pending or approved request. Atomically restores reserved or used leave balances. |
+| `POST` | `/api/leaves/policies` | System Admin | Creates or updates institutional leave types and default quotas. |
+| `POST` | `/api/leaves/adjust-balance` | System Admin | Manually adjusts faculty leave balance with recorded audit trail reason. |
 
 ### Academic Calendar & Events (`/api/events`) (Phase 5)
 | Method | Endpoint | Access | Description |
@@ -326,7 +393,7 @@ npm run db:migrate
 # Seed development test accounts (password for all: Password@12345)
 npm run db:seed
 
-# Run all automated tests (84 tests total: 72 server, 12 client)
+# Run all automated tests (108 tests total: 94 server, 14 client)
 npm run test
 
 # Run backend test suites (Supertest + Vitest)
@@ -384,6 +451,53 @@ The decoupling implemented in `server/src/services/storage.service.ts` allows a 
    - Task assignment changes, syllabus progress updates, and event attendee updates execute within transactional SQL queries.
    - Foreign key constraints strictly prevent orphan records.
    - Disabled/inactive users cannot be invited to events or assigned work.
+
+---
+
+## 🏖️ Leave Management: Concurrency, Balance Reservation & State Machine (Phase 6)
+
+### 1. State Machine & Transitions
+Leave requests strictly follow a directional finite state machine:
+```text
+           [ Submit Request ]
+                   │
+                   ▼
+               ┌───────┐
+               │Pending│
+               └───┬───┘
+         ┌─────────┴─────────┐
+         ▼                   ▼
+    ┌────────┐          ┌────────┐
+    │Approved│          │Rejected│
+    └───┬────┘          └────────┘
+        │
+        ▼ (Eligible Cancel)
+   ┌─────────┐
+   │Cancelled│
+   └─────────┘
+```
+- **`Pending` $\rightarrow$ `Approved`**: HOD approves within their authorized department. Decrements `pending_days` and increments `used_days`.
+- **`Pending` $\rightarrow$ `Rejected`**: HOD rejects within their authorized department. Releases `pending_days` reservation.
+- **`Pending` $\rightarrow$ `Cancelled`**: Requester cancels their pending request. Releases `pending_days` reservation.
+- **`Approved` $\rightarrow$ `Cancelled`**: Requester cancels an approved future/ongoing request. Restores `used_days` to available balance.
+- **Terminal States**: `Rejected` and `Cancelled` cannot transition to any other status.
+- **Direct Status Bypasses**: Blocked. Server returns `400 Bad Request` or `403 Forbidden` for invalid or duplicate transitions.
+
+### 2. Transaction Safety & Concurrency Control
+- **Atomic Row-Locking**: All operations modifying leave balances (`POST /api/leaves`, `POST /api/leaves/:id/decision`, `POST /api/leaves/:id/cancel`) execute within MySQL transactions using `SELECT ... FOR UPDATE` on the specific `leave_balances` row.
+- **Race Condition Prevention**: Concurrent requests competing for the same entitlement quota cannot overspend. The first transaction commits its reservation, and the competing transaction reads the updated `pending_days` and `used_days`, failing cleanly with `400 Bad Request: Insufficient leave balance` if the quota is exceeded.
+- **Idempotent Transitions**: If a decision or cancellation is submitted more than once, subsequent requests fail because the request is no longer in the required prerequisite status, preventing duplicate balance subtractions or restorations.
+- **Audit Logging**: Every balance adjustment writes an immutable record to `leave_audit_logs` tracking previous and new balance quantities, reason, and actor ID.
+
+### 3. Institutional Policy Assumptions & Date Calculations
+- **Configurable Leave Quotas (Default 2026-2027)**:
+  - `CASUAL`: 12.0 days/year (Paid, supports half-day).
+  - `SICK`: 10.0 days/year (Paid, supports half-day).
+  - `EARNED`: 15.0 days/year (Paid, supports half-day).
+  - `UNPAID` (Leave Without Pay): 0.0 days baseline quota (Unpaid, unlimited, never decrements paid entitlements).
+- **Duration Calculation**: Working days are calculated inclusively from `start_date` to `end_date`, excluding Sundays by default institutional academic policy.
+- **Half-Day Support**: If `is_half_day` is true, `start_date` and `end_date` must match, and the request is counted as exactly `0.5` days (`First Half` or `Second Half`).
+- **Indian Date Representation**: The React frontend and API serialize and format dates consistently for `Asia/Kolkata` using the Indian date format (e.g. `22 October 2026`).
 
 ---
 
@@ -476,3 +590,52 @@ To verify role permissions, dashboards, syllabus tracking, handovers, calendar e
    - Attempt to upload a file > 10 MB -> Server rejects with `400 Bad Request: File size exceeds maximum limit of 10 MB`.
 5. **Cross-Department Security**:
    - Log in as `hod.mech@facultyflow.local` and attempt to download the CS exam document via API -> Verify `403 Forbidden: You cannot access documents from another department`.
+
+### 8. Faculty Leave Management (Phase 6)
+1. **Leave Balances & Dynamic Indian Date Preview**:
+   - Log in as Assistant Professor `asst.cs@facultyflow.local`.
+   - Navigate to the **Leaves** tab.
+   - Observe Leave Balance cards: Casual (12.0 days), Sick (10.0 days), Earned (15.0 days), Unpaid (0.0 days).
+   - Click **Apply for Leave**.
+   - Select leave type `Casual Leave`, choose start date `2026-11-10` and end date `2026-11-11`. Observe the computed duration preview displaying `2 working day(s) (Sundays excluded by institutional policy)` and dates formatted in Indian style (`10 November 2026`).
+   - Enter reason `Attending international symposium on distributed systems` (min 5 characters) and submit.
+   - Observe success notification. The Casual Leave card now reflects `1 pending day(s) reserved`, and available days drop from `12.0` to `10.0`.
+2. **Half-Day Leave Option**:
+   - Open **Apply for Leave** modal again.
+   - Toggle **Request Half-Day Leave**. Notice the end date field is automatically hidden and locked to start date.
+   - Select **First Half (Morning)** period, enter date `2026-11-16`, enter reason `Morning hospital consultation`, and submit.
+   - Observe the new row in My Leave History displaying `Half-Day (First Half)` badge and `0.5 days` duration.
+3. **HOD Approval Queue & Decision Flow**:
+   - Log in as Head of Department `hod.cs@facultyflow.local`.
+   - Navigate to the **Leaves** tab.
+   - Observe Department Leave Overview metrics: `Awaiting Approval: 2`.
+   - Click the **Approval Queue (2)** sub-tab.
+   - View pending requests from `Claude Shannon` (`asst.cs@facultyflow.local`).
+   - Click **Approve** on the 2-day symposium request. The confirmation modal displays requester and dates.
+   - Enter decision notes: `Approved. Teaching coverage confirmed.` Click **Confirm Approved**.
+   - The queue updates immediately to `1 pending request`.
+4. **Enforcement: HOD Self-Approval Prevention**:
+   - As `hod.cs@facultyflow.local`, switch to **My Leave History** and submit a leave request for yourself.
+   - Observe the request appears in your personal history as `Pending`.
+   - Switch to the **Approval Queue**: Verify your own request is excluded from the queue. Direct API calls to `POST /api/leaves/:id/decision` for your own request return `403 Forbidden: HODs cannot approve their own leave requests`.
+5. **Enforcement: Cross-Department Isolation**:
+   - Log in as Mechanical Engineering HOD `hod.mech@facultyflow.local`.
+   - Navigate to the **Leaves** tab. Verify that pending requests from Computer Science faculty are invisible.
+   - Attempt to approve CS request `POST /api/leaves/<cs_request_id>/decision` via API -> Server returns `403 Forbidden: You can only decide leave requests within your department`.
+6. **Enforcement: Role Boundary Constraints**:
+   - Log in as Professor `prof.cs@facultyflow.local`.
+   - Verify that the **Approval Queue** tab is completely hidden.
+   - Direct API attempts to access `/api/leaves/approvals` or decide requests return `403 Forbidden: Only the Head of Department (HOD) can review and decide leave requests`.
+7. **Enforcement: System Admin Workflow Boundary**:
+   - Log in as `admin@facultyflow.local`.
+   - Attempt to approve a departmental leave request directly -> Returns `403 Forbidden: Only the Head of Department (HOD) can review and decide leave requests`.
+   - System Admin can manage leave policy quotas via `/api/leaves/policies` and record manual balance adjustments with audit justification via `/api/leaves/adjust-balance`.
+8. **Leave Cancellation & Automatic Balance Restoration**:
+   - Log in as `asst.cs@facultyflow.local`.
+   - In **My Leave History**, locate the approved 2-day request.
+   - Click **Cancel**, enter cancellation note `Symposium postponed by organizers`, and confirm.
+   - Status updates to `Cancelled`. Observe that the 2 used days are immediately restored to the available Casual Leave balance.
+9. **Unpaid Leave (LWP) Non-Deduction**:
+   - Apply for `Unpaid Leave (LWP)` for 3 days.
+   - Observe that paid Casual, Sick, and Earned leave balances remain unchanged.
+

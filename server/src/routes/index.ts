@@ -8,6 +8,7 @@ import { dashboardRouter } from './dashboard.routes.js';
 import { syllabusRouter } from './syllabus.routes.js';
 import { handoverRouter } from './handover.routes.js';
 import { eventRouter } from './event.routes.js';
+import { leaveRouter } from './leave.routes.js';
 
 export const apiRouter = Router();
 
@@ -20,4 +21,6 @@ apiRouter.use('/dashboard', dashboardRouter);
 apiRouter.use('/syllabus', syllabusRouter);
 apiRouter.use('/handovers', handoverRouter);
 apiRouter.use('/events', eventRouter);
+apiRouter.use('/leaves', leaveRouter);
+
 

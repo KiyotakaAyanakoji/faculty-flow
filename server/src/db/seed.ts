@@ -128,6 +128,23 @@ export async function seedDatabase(): Promise<void> {
       );
     }
 
+    // 3. Seed Initial Leave Balances for academic year 2026-2027
+    console.log('Seeding leave balances for academic year 2026-2027...');
+    const [allUsers] = await connection.query<any[]>('SELECT id, role FROM users WHERE is_active = 1');
+    const [leaveTypes] = await connection.query<any[]>('SELECT id, default_days_per_year FROM leave_types');
+
+    for (const u of allUsers) {
+      if (u.role === ROLES.SYSTEM_ADMIN) continue;
+      for (const lt of leaveTypes) {
+        await connection.query(
+          `INSERT INTO leave_balances (user_id, leave_type_id, academic_year, entitled_days, used_days, pending_days)
+           VALUES (?, ?, '2026-2027', ?, 0.0, 0.0)
+           ON DUPLICATE KEY UPDATE entitled_days = VALUES(entitled_days), used_days = 0.0, pending_days = 0.0`,
+          [u.id, lt.id, lt.default_days_per_year]
+        );
+      }
+    }
+
     await connection.commit();
     console.log('Seeding completed successfully.');
     console.log('All test accounts use password: Password@12345');
