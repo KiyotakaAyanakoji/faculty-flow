@@ -60,6 +60,36 @@ export const ALL_TASK_STATUSES: TaskStatus[] = [
   TASK_STATUSES.COMPLETED,
 ];
 
+export const SYLLABUS_STATUSES = {
+  DRAFT: 'Draft',
+  IN_PROGRESS: 'In Progress',
+  COMPLETED: 'Completed',
+} as const;
+
+export type SyllabusStatus = typeof SYLLABUS_STATUSES[keyof typeof SYLLABUS_STATUSES];
+
+export const ALL_SYLLABUS_STATUSES: SyllabusStatus[] = [
+  SYLLABUS_STATUSES.DRAFT,
+  SYLLABUS_STATUSES.IN_PROGRESS,
+  SYLLABUS_STATUSES.COMPLETED,
+];
+
+export const HANDOVER_STATUSES = {
+  PENDING: 'Pending',
+  ACCEPTED: 'Accepted',
+  REJECTED: 'Rejected',
+  COMPLETED: 'Completed',
+} as const;
+
+export type HandoverStatus = typeof HANDOVER_STATUSES[keyof typeof HANDOVER_STATUSES];
+
+export const ALL_HANDOVER_STATUSES: HandoverStatus[] = [
+  HANDOVER_STATUSES.PENDING,
+  HANDOVER_STATUSES.ACCEPTED,
+  HANDOVER_STATUSES.REJECTED,
+  HANDOVER_STATUSES.COMPLETED,
+];
+
 /**
  * Permitted task categories per role:
  * - HOD: All 5 categories (Teaching, Research, Grading, Meetings, Administrative)

@@ -7,13 +7,16 @@ import { DepartmentFacultyView } from './components/DepartmentFacultyView';
 import { UserManagementView } from './components/UserManagementView';
 import { TaskPolicySimulator } from './components/TaskPolicySimulator';
 import { TaskManagementView } from './components/TaskManagementView';
+import { DashboardView } from './components/DashboardView';
+import { SyllabusManagementView } from './components/SyllabusManagementView';
+import { HandoverManagementView } from './components/HandoverManagementView';
 import { HealthCard } from './components/HealthCard';
 import { Layers, Terminal, Database, Sparkles, ShieldCheck } from 'lucide-react';
 import './App.css';
 
 const MainAppContent: React.FC = () => {
   const { user, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
 
   if (loading && !user) {
     return (
@@ -36,10 +39,13 @@ const MainAppContent: React.FC = () => {
           <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
           <main>
-            {activeTab === 'overview' && <RoleMatrixView />}
+            {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
             {activeTab === 'tasks' && <TaskManagementView />}
+            {activeTab === 'syllabus' && <SyllabusManagementView />}
+            {activeTab === 'handovers' && <HandoverManagementView />}
             {activeTab === 'faculty' && <DepartmentFacultyView />}
             {activeTab === 'users' && user.role === 'SYSTEM_ADMIN' && <UserManagementView />}
+            {activeTab === 'overview' && <RoleMatrixView />}
             {activeTab === 'simulator' && <TaskPolicySimulator />}
           </main>
 

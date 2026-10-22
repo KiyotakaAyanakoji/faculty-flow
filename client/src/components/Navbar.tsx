@@ -10,6 +10,9 @@ import {
   Cpu,
   Layers,
   CheckSquare,
+  LayoutDashboard,
+  BookOpen,
+  Send,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -67,10 +70,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
       {/* Role-Aware Tab Navigation */}
       <div className="nav-tabs">
         <button
-          className={`nav-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
+          id="tab-dashboard"
+          className={`nav-tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
         >
-          <Shield size={16} /> Overview
+          <LayoutDashboard size={16} /> Dashboard
         </button>
 
         {user.departmentId && (
@@ -80,6 +84,26 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             onClick={() => setActiveTab('tasks')}
           >
             <CheckSquare size={16} /> Tasks
+          </button>
+        )}
+
+        {user.departmentId && (
+          <button
+            id="tab-syllabus"
+            className={`nav-tab-btn ${activeTab === 'syllabus' ? 'active' : ''}`}
+            onClick={() => setActiveTab('syllabus')}
+          >
+            <BookOpen size={16} /> Syllabus
+          </button>
+        )}
+
+        {user.departmentId && (
+          <button
+            id="tab-handovers"
+            className={`nav-tab-btn ${activeTab === 'handovers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('handovers')}
+          >
+            <Send size={16} /> Handovers
           </button>
         )}
 
@@ -100,6 +124,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             <UserCheck size={16} /> User Management
           </button>
         )}
+
+        <button
+          className={`nav-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
+          onClick={() => setActiveTab('overview')}
+        >
+          <Shield size={16} /> RBAC Matrix
+        </button>
 
         <button
           className={`nav-tab-btn ${activeTab === 'simulator' ? 'active' : ''}`}

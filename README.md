@@ -1,7 +1,7 @@
 # Faculty Flow 2.0
 
 > Modern Academic Operations & Faculty Management System
-> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments**
+> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers**
 
 Faculty Flow 2.0 is an enterprise-grade academic operations platform designed for higher education institutions. This repository features a modular, decoupled full-stack architecture built with React 19 (Vite + TypeScript), Node.js (Express + TypeScript), and MySQL.
 
@@ -15,12 +15,12 @@ The codebase is organized as an npm workspaces monorepo:
 faculty_flow/
 ├── client/                     # Frontend Application (React 19 + Vite + TypeScript)
 │   ├── src/
-│   │   ├── components/         # UI components (TaskManagementView, LoginForm, Navbar, RoleMatrixView, HealthCard, etc.)
+│   │   ├── components/         # UI components (DashboardView, TaskManagementView, SyllabusManagementView, HandoverManagementView, LoginForm, Navbar, HealthCard, etc.)
 │   │   ├── context/            # AuthContext & useAuth session hook
-│   │   ├── test/               # Vitest + React Testing Library suites (App, Tasks)
-│   │   ├── types/              # Client auth, department, and task type definitions
-│   │   ├── App.tsx             # Root authenticated shell and public landing
-│   │   ├── App.css             # Vanilla CSS layout and component styling
+│   │   ├── test/               # Vitest + React Testing Library suites (App, Dashboard, Tasks, Syllabus, Handovers)
+│   │   ├── types/              # Client auth, department, task, dashboard, syllabus, and handover type definitions
+│   │   ├── App.tsx             # Root authenticated shell, role-based navigation tabs, and public landing
+│   │   ├── App.css             # Modern dark-mode responsive layout and glassmorphism styling
 │   │   ├── index.css           # Design tokens, color system, and resets
 │   │   └── main.tsx            # Application entry point
 │   ├── .env.example            # Client environment template
@@ -32,26 +32,30 @@ faculty_flow/
 ├── server/                     # Backend API Application (Node.js + Express + TypeScript)
 │   ├── src/
 │   │   ├── config/             # Zod environment validation & MySQL connection pool
-│   │   ├── constants/          # Role definitions, RBAC policies, task priorities, statuses
-│   │   ├── controllers/        # Task, Auth, User, Department, TaskPolicy, Health controllers
+│   │   ├── constants/          # Role definitions, RBAC policies, task priorities, statuses, syllabus/handover enums
+│   │   ├── controllers/        # Dashboard, Task, Syllabus, Handover, Auth, User, Department, Health controllers
 │   │   ├── db/                 # Transactional migration runner, seed script, SQL files
 │   │   │   ├── migrations/
-│   │   │   │   ├── 001_initial_schema.sql         # Schema migration tracker & system metadata
-│   │   │   │   ├── 002_auth_and_rbac.sql          # Departments, Users, Tokens, Audit Logs
-│   │   │   │   └── 003_tasks_and_assignments.sql  # Tasks, Assignments, Statuses, Deadlines
-│   │   │   ├── migrate.ts                         # Migration runner
-│   │   │   └── seed.ts                            # Safe development database seeder
+│   │   │   │   ├── 001_initial_schema.sql            # Schema migration tracker & system metadata
+│   │   │   │   ├── 002_auth_and_rbac.sql             # Departments, Users, Tokens, Audit Logs
+│   │   │   │   ├── 003_tasks_and_assignments.sql     # Tasks, Assignments, Statuses, Deadlines
+│   │   │   │   └── 004_syllabus_and_handovers.sql    # Syllabuses, Units, Faculty Handovers, Task Linkages
+│   │   │   ├── migrate.ts                            # Migration runner
+│   │   │   └── seed.ts                               # Safe development database seeder
 │   │   ├── middleware/         # Auth verification, RBAC guards, rate limiter, error handlers
-│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks)
+│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks, /dashboard, /syllabus, /handovers)
 │   │   ├── services/           # JWT & DB-backed refresh token service, audit logging
-│   │   ├── types/              # Server user, token, task, and Express typing extensions
-│   │   ├── validators/         # Zod schemas for input validation (auth, user, task)
+│   │   ├── types/              # Server user, token, task, dashboard, syllabus, handover Express typings
+│   │   ├── validators/         # Zod schemas for input validation (auth, user, task, syllabus, handover)
 │   │   ├── app.ts              # Express application factory & middleware chain
 │   │   └── index.ts            # Server entry point with DB check & graceful shutdown
 │   ├── test/                   # Vitest + Supertest backend test suites
 │   │   ├── auth.test.ts        # Authentication, password hashing, and cookie tests
 │   │   ├── rbac.test.ts        # Role permissions, department isolation, and matrix tests
 │   │   ├── tasks.test.ts       # Task management, role permissions, scoping, reassignment
+│   │   ├── dashboard.test.ts   # Role-specific dashboard views and workload aggregations (Phase 4)
+│   │   ├── syllabus.test.ts    # Course syllabus management, progress tracking & isolation (Phase 4)
+│   │   ├── handovers.test.ts   # Faculty handover lifecycle, task linkage & permissions (Phase 4)
 │   │   └── health.test.ts      # Phase 1 health check smoke tests
 │   ├── .env.example            # Server environment template
 │   ├── package.json            # Server dependencies and scripts
@@ -120,12 +124,38 @@ faculty_flow/
    - `completed_at` (TIMESTAMP NULL): Recorded automatically upon task completion.
    - `created_at` / `updated_at` (TIMESTAMP): Automatic timestamp management.
    - **Indexes**: `(department_id, status)`, `(assignee_id, status)`, `(creator_id)`, `(due_date)`.
-6. **`schema_migrations`**:
-   - Tracks executed migration files in sequence with transaction rollback safety.
+6. **`syllabuses`** (Phase 4):
+   - `id` (INT PK AI): Unique course syllabus identifier.
+   - `department_id` (FK -> `departments.id` ON DELETE RESTRICT): Scoped to department.
+   - `course_code` (VARCHAR(30)): Course identifier (e.g., `CS301`).
+   - `course_name` (VARCHAR(200)): Full course name.
+   - `academic_year` (VARCHAR(50)): Academic year or term (e.g., `2026-2027`).
+   - `units` (JSON): Structured array of syllabus units/topics with titles, hours, and objectives.
+   - `completion_percentage` (TINYINT UNSIGNED DEFAULT 0): Real-time progress (0-100%).
+   - `status` (ENUM): `Draft`, `In Progress`, `Completed`, `Archived` (DEFAULT `Draft`).
+   - `responsible_faculty_id` (FK -> `users.id` ON DELETE SET NULL): Responsible instructor in same department.
+   - `created_by` (FK -> `users.id` ON DELETE RESTRICT): Creator faculty member.
+   - `created_at` / `updated_at` (TIMESTAMP): Automatic timestamp management.
+   - **Indexes**: `(department_id, status)`, `(responsible_faculty_id)`, `(course_code)`.
+7. **`handovers`** (Phase 4):
+   - `id` (INT PK AI): Unique academic handover record identifier.
+   - `sender_id` (FK -> `users.id` ON DELETE RESTRICT): Server-derived authenticated sender.
+   - `recipient_id` (FK -> `users.id` ON DELETE RESTRICT): Recipient faculty member in same department.
+   - `department_id` (FK -> `departments.id` ON DELETE RESTRICT): Scoped to departmental boundaries.
+   - `related_task_id` (FK -> `tasks.id` ON DELETE SET NULL): Optional linked task for academic continuity.
+   - `title` (VARCHAR(255)): Mandatory handover summary title.
+   - `notes` (TEXT): Detailed context, guidelines, and deliverables.
+   - `deadline` (DATE NULL): Relevant handover completion deadline (`YYYY-MM-DD`).
+   - `status` (ENUM): `Pending`, `Accepted`, `Rejected`, `Completed` (DEFAULT `Pending`).
+   - `completed_at` (TIMESTAMP NULL): Recorded when marked completed.
+   - `created_at` / `updated_at` (TIMESTAMP): Automatic timestamp management.
+   - **Indexes**: `(sender_id, status)`, `(recipient_id, status)`, `(department_id, status)`, `(related_task_id)`.
+8. **`schema_migrations`**:
+   - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`) with transaction rollback safety.
 
 ### Migration Commands
 ```bash
-# Run pending migrations (applies 001, 002, and 003)
+# Run pending migrations (applies 001, 002, 003, and 004)
 npm run db:migrate
 
 # Seed development departments and test accounts
@@ -137,6 +167,44 @@ npm run db:seed
 ---
 
 ## 🔌 API Endpoints Summary
+
+### Dashboards & Workload (`/api/dashboard`) (Phase 4)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/dashboard` | Authenticated | Returns role-specific dashboard metrics, workload aggregations, overdue/upcoming counts, and department data tailored to the authenticated role. |
+
+### Syllabus Tracking & Management (`/api/syllabus`) (Phase 4)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/syllabus` | Authenticated | Lists departmental course syllabuses with filters (`status`, `academicYear`, `responsibleFacultyId`, `search`). |
+| `POST` | `/api/syllabus` | HOD / Professor | Creates a new course syllabus in the user's department. |
+| `GET` | `/api/syllabus/:id` | Scoped Auth | Retrieves full syllabus record including units and assigned instructor. |
+| `PATCH` | `/api/syllabus/:id` | HOD / Creator | Updates syllabus details, course units, and assigned instructor. |
+| `PATCH` | `/api/syllabus/:id/progress` | Instructor / HOD | Updates course completion percentage (0-100%) and syllabus status. |
+| `DELETE` | `/api/syllabus/:id` | HOD | Deletes/archives course syllabus. |
+
+### Faculty Academic Handovers (`/api/handovers`) (Phase 4)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/handovers` | Authenticated | Lists authorized handovers (Sender, Recipient, or HOD within department) with filters (`filter=sent\|received\|all`, `status`, `relatedTaskId`). |
+| `POST` | `/api/handovers` | Authenticated | Initiates an academic handover to a faculty member in the same department. Sender derived server-side. |
+| `GET` | `/api/handovers/:id` | Scoped Auth | Retrieves handover details with sender, recipient, and linked task context. |
+| `PATCH` | `/api/handovers/:id/status` | Recipient/Sender/HOD | Transitions handover status (`Pending` -> `Accepted`/`Rejected` -> `Completed`). |
+| `DELETE` | `/api/handovers/:id` | Sender / HOD | Deletes/withdraws a pending handover. |
+
+### Task Management & Faculty Assignments (`/api/tasks`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/tasks` | Authenticated | Lists authorized departmental tasks with filtering (`status`, `category`, `priority`, `view`, `search`) and pagination. |
+| `POST` | `/api/tasks` | Role Policy | Creates a task and assigns to eligible recipient in creator's department. |
+| `GET` | `/api/tasks/summary` | Authenticated | Computes aggregated departmental workload metrics (total, pending, in progress, completed, high priority, by category). |
+| `GET` | `/api/tasks/eligible-assignees` | Authenticated | Returns real authorized recipients for signed-in user's role and category. |
+| `GET` | `/api/tasks/:id` | Scoped Auth | Retrieves full task record with creator, assignee, and department objects. |
+| `PATCH` | `/api/tasks/:id` | Creator / HOD | Updates task details (`title`, `description`, `priority`, `dueDate`). |
+| `PATCH` | `/api/tasks/:id/assign` | Creator / HOD | Reassigns task transactionally to an eligible recipient in same department. |
+| `PATCH` | `/api/tasks/:id/status` | Assignee/Creator/HOD | Transitions status (`Pending` -> `In Progress` -> `Completed`) and records `completed_at`. |
+| `DELETE` | `/api/tasks/:id` | Creator / HOD | Deletes/archives task. |
+| `POST` | `/api/tasks/evaluate-allocation` | Authenticated | Policy evaluation endpoint checking actor authority against target & category. |
 
 ### Authentication (`/api/auth`)
 | Method | Endpoint | Access | Description |
@@ -162,20 +230,6 @@ npm run db:seed
 | `POST` | `/api/departments` | System Admin | Creates a new academic department. |
 | `GET` | `/api/departments/:id` | Authenticated | Returns department details. |
 | `GET` | `/api/departments/:id/faculty` | Scoped | Lists faculty in department (Admin or members of that department). |
-
-### Task Management & Faculty Assignments (`/api/tasks`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/tasks` | Authenticated | Lists authorized departmental tasks with filtering (`status`, `category`, `priority`, `view`, `search`) and pagination. |
-| `POST` | `/api/tasks` | Role Policy | Creates a task and assigns to eligible recipient in creator's department. |
-| `GET` | `/api/tasks/summary` | Authenticated | Computes aggregated departmental workload metrics (total, pending, in progress, completed, high priority, by category). |
-| `GET` | `/api/tasks/eligible-assignees` | Authenticated | Returns real authorized recipients for signed-in user's role and category. |
-| `GET` | `/api/tasks/:id` | Scoped Auth | Retrieves full task record with creator, assignee, and department objects. |
-| `PATCH` | `/api/tasks/:id` | Creator / HOD | Updates task details (`title`, `description`, `priority`, `dueDate`). |
-| `PATCH` | `/api/tasks/:id/assign` | Creator / HOD | Reassigns task transactionally to an eligible recipient in same department. |
-| `PATCH` | `/api/tasks/:id/status` | Assignee/Creator/HOD | Transitions status (`Pending` -> `In Progress` -> `Completed`) and records `completed_at`. |
-| `DELETE` | `/api/tasks/:id` | Creator / HOD | Deletes/archives task. |
-| `POST` | `/api/tasks/evaluate-allocation` | Authenticated | Policy evaluation endpoint checking actor authority against target & category. |
 
 ### Health Checks (`/health`, `/api/health`)
 | Method | Endpoint | Access | Description |
@@ -226,7 +280,7 @@ npm run db:migrate
 # Seed development test accounts (password for all: Password@12345)
 npm run db:seed
 
-# Run all automated tests (46 tests total: 41 server, 5 client)
+# Run all automated tests (72 tests total: 62 server, 10 client)
 npm run test
 
 # Run backend test suites (Supertest + Vitest)
@@ -250,17 +304,17 @@ npm run dev
 ## 📅 Workload & Task Integrity
 
 1. **Consistent Workload Aggregations**:
-   - `GET /api/tasks/summary` calculates metrics grouped strictly by current status (`Pending`, `In Progress`, `Completed`) and categories.
+   - `GET /api/tasks/summary` and `GET /api/dashboard` calculate metrics grouped strictly by current status (`Pending`, `In Progress`, `Completed`), categories, and priorities.
    - Reassignment transfers the assignee pointer transactionally without duplicating records.
    - Completing a task sets `completed_at = CURRENT_TIMESTAMP`, accurately reflecting resolution time.
 2. **Date & Timezone Predictability**:
-   - Due dates are stored using MySQL `DATE` format (`YYYY-MM-DD`).
+   - Due dates and deadlines are stored using MySQL `DATE` format (`YYYY-MM-DD`).
    - Responses serialize calendar dates directly as `YYYY-MM-DD` strings, preventing unwanted 1-day timezone shifting across local timezones (e.g. `Asia/Kolkata` vs UTC midnight).
    - Display interpretations in the React UI format dates using institutional locale conventions.
 3. **Data Integrity & Concurrency**:
-   - Task assignment changes and status updates execute within parameterized SQL queries.
-   - Foreign key constraints (`creator_id`, `assignee_id`, `department_id`) strictly prevent orphan task records.
-   - Disabled/inactive users cannot be assigned new tasks.
+   - Task assignment changes, syllabus progress updates, and handover transitions execute within parameterized SQL queries.
+   - Foreign key constraints (`creator_id`, `assignee_id`, `department_id`, `responsible_faculty_id`, `sender_id`, `recipient_id`) strictly prevent orphan records.
+   - Disabled/inactive users cannot be assigned new tasks, syllabuses, or handovers.
 
 ---
 
@@ -283,36 +337,53 @@ When `npm run db:seed` is executed, the following baseline test accounts are pro
 
 ## 📋 Manual Verification Procedure
 
-To verify role permissions and task isolation using the development seed accounts:
+To verify role permissions, dashboards, syllabus tracking, and handovers using the development seed accounts:
 
 ### 1. System Admin Verification (`admin@facultyflow.local`)
 1. Log in via frontend or API.
 2. Verify access to User Management and Department Management.
-3. Attempt to allocate a task or navigate to Tasks: observe that System Admin does not have departmental task allocation privileges (`403 Forbidden` on `/api/tasks`).
+3. Access Dashboard: Observe system-level metrics (active users, departments, recent logins/audit events).
+4. Verify that System Admin does not have departmental academic access (HOD dashboard and task allocation return `403 Forbidden`).
 
 ### 2. Head of Department Verification (`hod.cs@facultyflow.local`)
 1. Log in as HOD of Computer Science.
-2. Navigate to the **Tasks** tab.
-3. Click **Assign New Task**.
-4. Verify all 5 categories (`Teaching`, `Research`, `Grading`, `Meetings`, `Administrative`) are selectable.
-5. Create an `Administrative` task assigned to `prof.cs@facultyflow.local`. Observe success.
-6. Check the assignee dropdown: observe that only active faculty from the Computer Science department are listed (Mechanical Engineering faculty are omitted).
+2. Navigate to the **Dashboard** tab:
+   - View Department Workload Summary (total tasks, pending, in progress, completed).
+   - View Overdue & Upcoming 7-Day task counts calculated in backend.
+   - View Department Tasks distribution by Category and Priority.
+   - View Faculty Workload breakdown (tasks assigned per faculty member).
+   - View Course Syllabus completion indicators and Active Handovers.
+3. Navigate to the **Tasks** tab and verify full allocation permissions.
 
 ### 3. Professor Verification (`prof.cs@facultyflow.local`)
 1. Log in as Professor of Computer Science.
-2. Navigate to **Tasks** and click **Assign New Task**.
-3. Verify that `Administrative` is not selectable (only `Teaching`, `Research`, `Grading`, `Meetings` are permitted).
-4. Direct API Check: Attempt `POST /api/tasks` with `category: "Administrative"`. Verify response is `403 Forbidden: Professors are not permitted to allocate Administrative tasks`.
-5. Verify eligible assignees in dropdown only shows Assistant Professors (`asst.cs@facultyflow.local`, `asst.lead.cs@facultyflow.local`).
+2. Navigate to **Dashboard**:
+   - View personal assigned tasks and personal created tasks.
+   - View personal workload counts and permitted departmental summary.
+   - Verify private tasks from other faculty are not exposed.
+3. Verify that `Administrative` tasks cannot be assigned.
 
-### 4. Assistant Professor Verification (`asst.cs@facultyflow.local` & `asst.lead.cs@facultyflow.local`)
-1. Log in as standard Assistant Professor (`asst.cs@facultyflow.local`).
-2. Verify the **Assign New Task** button is hidden.
-3. Direct API Check: Attempt `POST /api/tasks`. Verify response is `403 Forbidden: Assistant Professors are not authorized to allocate work by default`.
-4. Log in as delegated Assistant Professor (`asst.lead.cs@facultyflow.local`).
-5. Observe **Assign New Task** is enabled. Verify permitted categories are `Teaching`, `Research`, and `Grading`.
+### 4. Assistant Professor Verification (`asst.cs@facultyflow.local`)
+1. Log in as Assistant Professor (`asst.cs@facultyflow.local`).
+2. Navigate to **Dashboard**:
+   - View personal assigned tasks, task statuses, deadlines, and personal workload metrics.
+   - Verify departmental-wide task lists and private peer allocations are hidden.
+3. Verify task status transition buttons (`Start Working` -> `In Progress`, `Complete Task` -> `Completed`).
 
-### 5. Cross-Department & Boundary Isolation Verification
-1. As `hod.cs@facultyflow.local`, attempt to create or view a task belonging to `MECH` department (`departmentId: 2`). Verify response is `403 Forbidden`.
-2. As `hod.cs@facultyflow.local`, attempt to assign a task to `prof.mech@facultyflow.local`. Verify response is `403 Forbidden: Assignee must belong to the same department as the creator`.
-3. Attempt to pass client-supplied `creatorId` or `departmentId` in task payload. Verify server derives the creator and department strictly from authenticated session context.
+### 5. Syllabus Tracking & Progress Updates
+1. As `hod.cs@facultyflow.local` or `prof.cs@facultyflow.local`, navigate to the **Syllabus** tab.
+2. Click **Add Course Syllabus** and create course `CS301` ("Operating Systems & Concurrency") for term `2026-2027` assigned to `prof.cs@facultyflow.local`.
+3. Verify syllabus displays with progress bar and units count.
+4. As assigned instructor or HOD, click **Update Progress** and adjust completion to 60% and status to `In Progress`. Observe real-time progress update.
+5. Attempt unauthorized modification: As faculty from `MECH` department, attempt to update CS syllabus progress via `PATCH /api/syllabus/:id/progress` -> Verify `403 Forbidden`.
+6. Non-HOD users attempting to delete syllabus records receive `403 Forbidden`.
+
+### 6. Faculty Academic Handovers
+1. As `hod.cs@facultyflow.local` or `prof.cs@facultyflow.local`, navigate to the **Handovers** tab.
+2. Click **Initiate Handover**, select recipient `asst.cs@facultyflow.local`, link an existing task, enter handover title and context, and submit.
+3. Verify sender cannot spoof client-supplied `senderId` (server binds `sender_id` directly to authenticated session token).
+4. Log in as recipient `asst.cs@facultyflow.local`, navigate to **Handovers**, filter by **Received**:
+   - Observe incoming handover with linked task context.
+   - Click **Accept Handover** -> Status transitions to `Accepted`.
+   - Click **Mark Completed** -> Status transitions to `Completed` with recorded completion timestamp.
+5. Department and Privacy Isolation: Faculty from `MECH` department attempting to view or modify this handover receive `403 Forbidden`.

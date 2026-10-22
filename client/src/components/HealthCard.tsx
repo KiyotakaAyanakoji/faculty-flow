@@ -147,10 +147,10 @@ export const HealthCard: React.FC = () => {
           </div>
           <div className="status-item-body">
             <span className="badge neutral">
-              {data ? data.environment.toUpperCase() : 'DEV'}
+              {data?.environment ? data.environment.toUpperCase() : 'DEV'}
             </span>
             <span className="item-meta">
-              {data ? `Uptime: ${formatUptime(data.uptime)}` : 'Node.js + TS'}
+              {data?.uptime !== undefined ? `Uptime: ${formatUptime(data.uptime)}` : 'Node.js + TS'}
             </span>
           </div>
         </div>

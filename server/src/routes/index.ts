@@ -4,6 +4,9 @@ import { authRouter } from './auth.routes.js';
 import { userRouter } from './user.routes.js';
 import { departmentRouter } from './department.routes.js';
 import { taskRouter } from './task.routes.js';
+import { dashboardRouter } from './dashboard.routes.js';
+import { syllabusRouter } from './syllabus.routes.js';
+import { handoverRouter } from './handover.routes.js';
 
 export const apiRouter = Router();
 
@@ -12,3 +15,7 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/users', userRouter);
 apiRouter.use('/departments', departmentRouter);
 apiRouter.use('/tasks', taskRouter);
+apiRouter.use('/dashboard', dashboardRouter);
+apiRouter.use('/syllabus', syllabusRouter);
+apiRouter.use('/handovers', handoverRouter);
+
