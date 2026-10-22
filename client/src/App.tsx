@@ -6,6 +6,7 @@ import { RoleMatrixView } from './components/RoleMatrixView';
 import { DepartmentFacultyView } from './components/DepartmentFacultyView';
 import { UserManagementView } from './components/UserManagementView';
 import { TaskPolicySimulator } from './components/TaskPolicySimulator';
+import { TaskManagementView } from './components/TaskManagementView';
 import { HealthCard } from './components/HealthCard';
 import { Layers, Terminal, Database, Sparkles, ShieldCheck } from 'lucide-react';
 import './App.css';
@@ -36,6 +37,7 @@ const MainAppContent: React.FC = () => {
 
           <main>
             {activeTab === 'overview' && <RoleMatrixView />}
+            {activeTab === 'tasks' && <TaskManagementView />}
             {activeTab === 'faculty' && <DepartmentFacultyView />}
             {activeTab === 'users' && user.role === 'SYSTEM_ADMIN' && <UserManagementView />}
             {activeTab === 'simulator' && <TaskPolicySimulator />}

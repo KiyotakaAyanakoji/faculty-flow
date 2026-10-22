@@ -124,7 +124,7 @@ export const HealthCard: React.FC = () => {
           <div className="status-item-body">
             {loading ? (
               <span className="badge checking">Verifying...</span>
-            ) : data?.database.status === 'connected' ? (
+            ) : data?.database?.status === 'connected' ? (
               <span className="badge online">
                 <CheckCircle2 size={14} /> Connected
               </span>

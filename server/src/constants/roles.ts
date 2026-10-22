@@ -32,6 +32,34 @@ export const ALL_TASK_CATEGORIES: TaskCategory[] = [
   TASK_CATEGORIES.ADMINISTRATIVE,
 ];
 
+export const TASK_PRIORITIES = {
+  LOW: 'Low',
+  MEDIUM: 'Medium',
+  HIGH: 'High',
+} as const;
+
+export type TaskPriority = typeof TASK_PRIORITIES[keyof typeof TASK_PRIORITIES];
+
+export const ALL_TASK_PRIORITIES: TaskPriority[] = [
+  TASK_PRIORITIES.LOW,
+  TASK_PRIORITIES.MEDIUM,
+  TASK_PRIORITIES.HIGH,
+];
+
+export const TASK_STATUSES = {
+  PENDING: 'Pending',
+  IN_PROGRESS: 'In Progress',
+  COMPLETED: 'Completed',
+} as const;
+
+export type TaskStatus = typeof TASK_STATUSES[keyof typeof TASK_STATUSES];
+
+export const ALL_TASK_STATUSES: TaskStatus[] = [
+  TASK_STATUSES.PENDING,
+  TASK_STATUSES.IN_PROGRESS,
+  TASK_STATUSES.COMPLETED,
+];
+
 /**
  * Permitted task categories per role:
  * - HOD: All 5 categories (Teaching, Research, Grading, Meetings, Administrative)

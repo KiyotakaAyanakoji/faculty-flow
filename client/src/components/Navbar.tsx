@@ -9,6 +9,7 @@ import {
   Users,
   Cpu,
   Layers,
+  CheckSquare,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -71,6 +72,16 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         >
           <Shield size={16} /> Overview
         </button>
+
+        {user.departmentId && (
+          <button
+            id="tab-tasks"
+            className={`nav-tab-btn ${activeTab === 'tasks' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tasks')}
+          >
+            <CheckSquare size={16} /> Tasks
+          </button>
+        )}
 
         {user.departmentId && (
           <button
