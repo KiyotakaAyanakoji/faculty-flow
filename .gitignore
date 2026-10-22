@@ -25,6 +25,10 @@ pnpm-debug.log*
 # Test coverage
 coverage/
 
+# Uploaded Files & Private Storage
+uploads/
+server/uploads/
+
 # OS and Editor files
 .DS_Store
 Thumbs.db

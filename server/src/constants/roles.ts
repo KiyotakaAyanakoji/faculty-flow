@@ -90,6 +90,42 @@ export const ALL_HANDOVER_STATUSES: HandoverStatus[] = [
   HANDOVER_STATUSES.COMPLETED,
 ];
 
+export const EVENT_CATEGORIES = {
+  EXAM: 'Exam',
+  MEETING: 'Meeting',
+  HOLIDAY: 'Holiday',
+  SUBMISSION: 'Submission',
+  CONFERENCE: 'Conference',
+  WORKSHOP: 'Workshop',
+} as const;
+
+export type EventCategory = typeof EVENT_CATEGORIES[keyof typeof EVENT_CATEGORIES];
+
+export const ALL_EVENT_CATEGORIES: EventCategory[] = [
+  EVENT_CATEGORIES.EXAM,
+  EVENT_CATEGORIES.MEETING,
+  EVENT_CATEGORIES.HOLIDAY,
+  EVENT_CATEGORIES.SUBMISSION,
+  EVENT_CATEGORIES.CONFERENCE,
+  EVENT_CATEGORIES.WORKSHOP,
+];
+
+export const PARTICIPANT_STATUSES = {
+  INVITED: 'Invited',
+  ACCEPTED: 'Accepted',
+  DECLINED: 'Declined',
+  TENTATIVE: 'Tentative',
+} as const;
+
+export type ParticipantStatus = typeof PARTICIPANT_STATUSES[keyof typeof PARTICIPANT_STATUSES];
+
+export const ALL_PARTICIPANT_STATUSES: ParticipantStatus[] = [
+  PARTICIPANT_STATUSES.INVITED,
+  PARTICIPANT_STATUSES.ACCEPTED,
+  PARTICIPANT_STATUSES.DECLINED,
+  PARTICIPANT_STATUSES.TENTATIVE,
+];
+
 /**
  * Permitted task categories per role:
  * - HOD: All 5 categories (Teaching, Research, Grading, Meetings, Administrative)

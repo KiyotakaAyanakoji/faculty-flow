@@ -1,7 +1,7 @@
 # Faculty Flow 2.0
 
 > Modern Academic Operations & Faculty Management System
-> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers**
+> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers** • **Phase 5: Academic Calendar, Events & Secure PDF Uploads**
 
 Faculty Flow 2.0 is an enterprise-grade academic operations platform designed for higher education institutions. This repository features a modular, decoupled full-stack architecture built with React 19 (Vite + TypeScript), Node.js (Express + TypeScript), and MySQL.
 
@@ -15,10 +15,10 @@ The codebase is organized as an npm workspaces monorepo:
 faculty_flow/
 ├── client/                     # Frontend Application (React 19 + Vite + TypeScript)
 │   ├── src/
-│   │   ├── components/         # UI components (DashboardView, TaskManagementView, SyllabusManagementView, HandoverManagementView, LoginForm, Navbar, HealthCard, etc.)
+│   │   ├── components/         # UI components (DashboardView, TaskManagementView, SyllabusManagementView, HandoverManagementView, CalendarManagementView, LoginForm, Navbar, HealthCard, etc.)
 │   │   ├── context/            # AuthContext & useAuth session hook
-│   │   ├── test/               # Vitest + React Testing Library suites (App, Dashboard, Tasks, Syllabus, Handovers)
-│   │   ├── types/              # Client auth, department, task, dashboard, syllabus, and handover type definitions
+│   │   ├── test/               # Vitest + React Testing Library suites (App, Dashboard, Tasks, Syllabus, Handovers, Calendar)
+│   │   ├── types/              # Client auth, department, task, dashboard, syllabus, handover, and event type definitions
 │   │   ├── App.tsx             # Root authenticated shell, role-based navigation tabs, and public landing
 │   │   ├── App.css             # Modern dark-mode responsive layout and glassmorphism styling
 │   │   ├── index.css           # Design tokens, color system, and resets
@@ -32,21 +32,22 @@ faculty_flow/
 ├── server/                     # Backend API Application (Node.js + Express + TypeScript)
 │   ├── src/
 │   │   ├── config/             # Zod environment validation & MySQL connection pool
-│   │   ├── constants/          # Role definitions, RBAC policies, task priorities, statuses, syllabus/handover enums
-│   │   ├── controllers/        # Dashboard, Task, Syllabus, Handover, Auth, User, Department, Health controllers
+│   │   ├── constants/          # Role definitions, RBAC policies, task priorities, statuses, event categories
+│   │   ├── controllers/        # Dashboard, Task, Syllabus, Handover, Event, Auth, User, Department, Health controllers
 │   │   ├── db/                 # Transactional migration runner, seed script, SQL files
 │   │   │   ├── migrations/
 │   │   │   │   ├── 001_initial_schema.sql            # Schema migration tracker & system metadata
 │   │   │   │   ├── 002_auth_and_rbac.sql             # Departments, Users, Tokens, Audit Logs
 │   │   │   │   ├── 003_tasks_and_assignments.sql     # Tasks, Assignments, Statuses, Deadlines
-│   │   │   │   └── 004_syllabus_and_handovers.sql    # Syllabuses, Units, Faculty Handovers, Task Linkages
+│   │   │   │   ├── 004_syllabus_and_handovers.sql    # Syllabuses, Units, Faculty Handovers, Task Linkages
+│   │   │   │   └── 005_academic_calendar_and_documents.sql # Academic Events, Attendees, Secure PDF Attachments
 │   │   │   ├── migrate.ts                            # Migration runner
 │   │   │   └── seed.ts                               # Safe development database seeder
-│   │   ├── middleware/         # Auth verification, RBAC guards, rate limiter, error handlers
-│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks, /dashboard, /syllabus, /handovers)
-│   │   ├── services/           # JWT & DB-backed refresh token service, audit logging
-│   │   ├── types/              # Server user, token, task, dashboard, syllabus, handover Express typings
-│   │   ├── validators/         # Zod schemas for input validation (auth, user, task, syllabus, handover)
+│   │   ├── middleware/         # Auth verification, RBAC guards, rate limiter, upload/magic bytes, error handlers
+│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks, /dashboard, /syllabus, /handovers, /events)
+│   │   ├── services/           # JWT & DB-backed refresh token service, audit logging, safe storage service
+│   │   ├── types/              # Server user, token, task, dashboard, syllabus, handover, event Express typings
+│   │   ├── validators/         # Zod schemas for input validation (auth, user, task, syllabus, handover, event)
 │   │   ├── app.ts              # Express application factory & middleware chain
 │   │   └── index.ts            # Server entry point with DB check & graceful shutdown
 │   ├── test/                   # Vitest + Supertest backend test suites
@@ -56,13 +57,15 @@ faculty_flow/
 │   │   ├── dashboard.test.ts   # Role-specific dashboard views and workload aggregations (Phase 4)
 │   │   ├── syllabus.test.ts    # Course syllabus management, progress tracking & isolation (Phase 4)
 │   │   ├── handovers.test.ts   # Faculty handover lifecycle, task linkage & permissions (Phase 4)
+│   │   ├── events.test.ts      # Academic calendar, attendee validation, secure PDF uploads & magic bytes (Phase 5)
 │   │   └── health.test.ts      # Phase 1 health check smoke tests
+│   ├── uploads/                # Private local storage directory for secured PDF attachments (.gitignored)
 │   ├── .env.example            # Server environment template
 │   ├── package.json            # Server dependencies and scripts
 │   └── tsconfig.json           # Server TypeScript configuration
 │
 ├── .env.example                # Root environment template
-├── .gitignore                  # Strict Git rules preventing secret and artifact leaks
+├── .gitignore                  # Strict Git rules preventing secret, upload, and artifact leaks
 ├── package.json                # Root workspaces orchestrator
 └── README.md                   # System documentation and operational runbook
 ```
@@ -150,12 +153,42 @@ faculty_flow/
    - `completed_at` (TIMESTAMP NULL): Recorded when marked completed.
    - `created_at` / `updated_at` (TIMESTAMP): Automatic timestamp management.
    - **Indexes**: `(sender_id, status)`, `(recipient_id, status)`, `(department_id, status)`, `(related_task_id)`.
-8. **`schema_migrations`**:
-   - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`) with transaction rollback safety.
+8. **`academic_events`** (Phase 5):
+   - `id` (INT PK AI): Unique event identifier.
+   - `title` (VARCHAR(255)): Mandatory event title.
+   - `description` (TEXT NULL): Agenda, guidelines, or event notes.
+   - `category` (ENUM): Canonical event types (`Exam`, `Meeting`, `Holiday`, `Submission`, `Conference`, `Workshop`).
+   - `start_time` / `end_time` (DATETIME): Validated event timeframe (`end_time >= start_time`).
+   - `is_all_day` (BOOLEAN DEFAULT FALSE): Flag for full-day academic occurrences.
+   - `location` (VARCHAR(255) NULL): Physical venue or classroom.
+   - `meeting_link` (VARCHAR(500) NULL): Virtual conference/meeting URL.
+   - `department_id` (FK -> `departments.id` ON DELETE RESTRICT): Departmental scope (NULL = institution-wide).
+   - `creator_id` (FK -> `users.id` ON DELETE RESTRICT): Server-derived authenticated creator.
+   - `created_at` / `updated_at` (TIMESTAMP): Automatic timestamp tracking.
+   - **Indexes**: `(department_id)`, `(creator_id)`, `(category)`, `(start_time, end_time)`.
+9. **`event_participants`** (Phase 5):
+   - `id` (INT PK AI): Unique participant link identifier.
+   - `event_id` (FK -> `academic_events.id` ON DELETE CASCADE): Parent academic event.
+   - `user_id` (FK -> `users.id` ON DELETE CASCADE): Invited faculty member in authorized department.
+   - `status` (ENUM): Attendance status (`Invited`, `Accepted`, `Declined`, `Tentative`, DEFAULT `Invited`).
+   - `created_at` (TIMESTAMP): Invitation timestamp.
+   - **Constraints**: `UNIQUE KEY (event_id, user_id)`, `INDEX (event_id)`, `INDEX (user_id)`.
+10. **`event_documents`** (Phase 5):
+    - `id` (INT PK AI): Unique attachment identifier.
+    - `event_id` (FK -> `academic_events.id` ON DELETE CASCADE): Associated academic event.
+    - `file_identifier` (VARCHAR(100) UNIQUE): Cryptographic UUID filename (`<uuid>.pdf`).
+    - `original_name` (VARCHAR(255)): Display filename.
+    - `mime_type` (VARCHAR(100)): Validated MIME type (`application/pdf`).
+    - `file_size` (INT): Validated document size (max 10 MB).
+    - `uploader_id` (FK -> `users.id` ON DELETE RESTRICT): Faculty member who uploaded the document.
+    - `created_at` / `updated_at` (TIMESTAMP): Audit timestamps.
+    - **Indexes**: `(event_id)`, `(uploader_id)`.
+11. **`schema_migrations`**:
+    - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`, `005`) with transaction rollback safety.
 
 ### Migration Commands
 ```bash
-# Run pending migrations (applies 001, 002, 003, and 004)
+# Run pending migrations (applies 001, 002, 003, 004, and 005)
 npm run db:migrate
 
 # Seed development departments and test accounts
@@ -167,6 +200,19 @@ npm run db:seed
 ---
 
 ## 🔌 API Endpoints Summary
+
+### Academic Calendar & Events (`/api/events`) (Phase 5)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/events` | Authenticated | Lists academic events accessible to user (department + institute-wide) with filters (`startDate`, `endDate`, `category`, `search`). |
+| `POST` | `/api/events` | HOD / Professor / Admin | Creates an academic event with transactionally managed attendees in the user's department. |
+| `GET` | `/api/events/eligible-participants` | Authenticated | Returns eligible active faculty members in the department for attendee selection. |
+| `GET` | `/api/events/:id` | Scoped Auth | Retrieves full event record including attendee list and attached PDF metadata. |
+| `PATCH` | `/api/events/:id` | Creator / HOD | Updates event details and synchronizes attendees without duplicates. |
+| `DELETE` | `/api/events/:id` | Creator / HOD | Deletes event and purges all attached physical storage files. |
+| `POST` | `/api/events/:id/documents` | Attendee / Creator / HOD | Attaches a secure PDF document (10MB limit, validated `%PDF-` magic bytes). |
+| `GET` | `/api/events/:id/documents/:docId/download` | Scoped Auth | Authenticated streaming download of attached PDF. |
+| `DELETE` | `/api/events/:id/documents/:docId` | Uploader / Creator / HOD | Deletes document record and unlinks file from private storage. |
 
 ### Dashboards & Workload (`/api/dashboard`) (Phase 4)
 | Method | Endpoint | Access | Description |
@@ -280,7 +326,7 @@ npm run db:migrate
 # Seed development test accounts (password for all: Password@12345)
 npm run db:seed
 
-# Run all automated tests (72 tests total: 62 server, 10 client)
+# Run all automated tests (84 tests total: 72 server, 12 client)
 npm run test
 
 # Run backend test suites (Supertest + Vitest)
@@ -301,20 +347,43 @@ npm run dev
 
 ---
 
-## 📅 Workload & Task Integrity
+## 🔒 Secure Document Storage Architecture & Cloud Strategy
+
+### 1. Private Local Storage Adapter
+- Uploaded PDF documents are stored in `server/uploads/events/` (or configurable via `EVENT_UPLOAD_DIR`).
+- The directory is strictly private and **never served via Express static middleware or client asset pipelines**.
+- `.gitignore` explicitly excludes `uploads/` and `server/uploads/` to guarantee no uploaded files or sensitive student/course materials are committed to source control.
+
+### 2. Multi-Layer Validation & Magic Bytes Inspection
+- **File Size Limit**: Documented 10 MB limit (`10 * 1024 * 1024` bytes) enforced in Multer middleware and client-side form validation.
+- **MIME & Extension**: Client-provided extension (`.pdf`) and MIME type (`application/pdf`) are checked as a first pass.
+- **Cryptographic Signature Inspection**: Before storing or committing metadata to MySQL, the server reads the initial file header bytes to confirm the `%PDF-` magic byte signature (`0x25 0x50 0x44 0x46 0x2D`). Disguised plain text or executable files renamed to `.pdf` are immediately deleted and rejected with `400 Bad Request`.
+- **Safe Server-Side Storage Identifiers**: User-provided filenames are never written to disk paths. Files are stored as `<uuid>.pdf` while the original sanitized name is stored in MySQL for download delivery.
+- **Path Traversal Protection**: File paths are resolved using `path.basename` and validated against directory bounds to prevent directory traversal attacks (`../`).
+
+### 3. Production Cloud Object Storage Migration Plan
+The decoupling implemented in `server/src/services/storage.service.ts` allows a seamless drop-in transition to cloud object storage (e.g. AWS S3, Google Cloud Storage, or MinIO):
+1. **Upload**: Stream multipart upload directly to an S3 bucket with private ACL (`PutObjectCommand`).
+2. **Download**: Issue short-lived, authenticated pre-signed URLs (e.g. 5-minute expiration) directly from S3, or stream through Express with authorized caching headers.
+3. **Deletion**: Call `DeleteObjectCommand` using the stored UUID key upon event or document deletion.
+
+---
+
+## 📅 Workload, Calendar & Timezone Integrity
 
 1. **Consistent Workload Aggregations**:
    - `GET /api/tasks/summary` and `GET /api/dashboard` calculate metrics grouped strictly by current status (`Pending`, `In Progress`, `Completed`), categories, and priorities.
    - Reassignment transfers the assignee pointer transactionally without duplicating records.
    - Completing a task sets `completed_at = CURRENT_TIMESTAMP`, accurately reflecting resolution time.
-2. **Date & Timezone Predictability**:
-   - Due dates and deadlines are stored using MySQL `DATE` format (`YYYY-MM-DD`).
-   - Responses serialize calendar dates directly as `YYYY-MM-DD` strings, preventing unwanted 1-day timezone shifting across local timezones (e.g. `Asia/Kolkata` vs UTC midnight).
-   - Display interpretations in the React UI format dates using institutional locale conventions.
+2. **Date & Timezone Predictability (Asia/Kolkata)**:
+   - Due dates and deadlines are stored using MySQL `DATE` (`YYYY-MM-DD`).
+   - Timed academic events store `start_time` and `end_time` using MySQL `DATETIME` (`YYYY-MM-DD HH:MM:SS`), serialized explicitly to ISO strings.
+   - Display formatting in the React UI uses Indian standard formatting conventions (`en-IN`), rendering dates as `22 October 2026` and times as `10:30 AM`.
+   - Date range boundaries properly support events that cross midnight or multi-day intervals.
 3. **Data Integrity & Concurrency**:
-   - Task assignment changes, syllabus progress updates, and handover transitions execute within parameterized SQL queries.
-   - Foreign key constraints (`creator_id`, `assignee_id`, `department_id`, `responsible_faculty_id`, `sender_id`, `recipient_id`) strictly prevent orphan records.
-   - Disabled/inactive users cannot be assigned new tasks, syllabuses, or handovers.
+   - Task assignment changes, syllabus progress updates, and event attendee updates execute within transactional SQL queries.
+   - Foreign key constraints strictly prevent orphan records.
+   - Disabled/inactive users cannot be invited to events or assigned work.
 
 ---
 
@@ -337,7 +406,7 @@ When `npm run db:seed` is executed, the following baseline test accounts are pro
 
 ## 📋 Manual Verification Procedure
 
-To verify role permissions, dashboards, syllabus tracking, and handovers using the development seed accounts:
+To verify role permissions, dashboards, syllabus tracking, handovers, calendar events, and secure PDF uploads:
 
 ### 1. System Admin Verification (`admin@facultyflow.local`)
 1. Log in via frontend or API.
@@ -387,3 +456,23 @@ To verify role permissions, dashboards, syllabus tracking, and handovers using t
    - Click **Accept Handover** -> Status transitions to `Accepted`.
    - Click **Mark Completed** -> Status transitions to `Completed` with recorded completion timestamp.
 5. Department and Privacy Isolation: Faculty from `MECH` department attempting to view or modify this handover receive `403 Forbidden`.
+
+### 7. Academic Calendar & Secure PDF Uploads (Phase 5)
+1. **Event Scheduling**:
+   - As `hod.cs@facultyflow.local` or `prof.cs@facultyflow.local`, navigate to the **Calendar** tab.
+   - Click **Schedule Academic Event**.
+   - Enter title `Operating Systems Midterm Examination`, category `Exam`, start date/time, and end date/time in Indian format.
+   - Select faculty attendees `Claude Shannon` (`asst.cs@facultyflow.local`). Submit.
+   - Observe the event badge rendered on the monthly calendar grid and in the list view.
+2. **Date & Range Validation**:
+   - Attempt to create an event with end time earlier than start time -> Observe client and server rejection (`400 Bad Request`).
+3. **Role Enforcement**:
+   - Log in as `asst.cs@facultyflow.local`: Observe that Assistant Professors can view the Calendar and attended events, but the `Schedule Academic Event` button is hidden. Direct API attempts return `403 Forbidden`.
+4. **Secure PDF Upload & Magic Bytes**:
+   - Click the created event to open the Event Details modal.
+   - In the Attached PDF Documents section, select a valid PDF (`.pdf` starting with `%PDF-`). Click **Upload PDF** -> Observe success and document listed with file size.
+   - Click **Download** -> Verify browser downloads the file safely with `attachment; filename="..."` headers.
+   - Attempt to upload a disguised text file renamed to `.pdf` -> Server rejects with `400 Bad Request: File contents do not match a valid PDF document signature`, and file is deleted from disk.
+   - Attempt to upload a file > 10 MB -> Server rejects with `400 Bad Request: File size exceeds maximum limit of 10 MB`.
+5. **Cross-Department Security**:
+   - Log in as `hod.mech@facultyflow.local` and attempt to download the CS exam document via API -> Verify `403 Forbidden: You cannot access documents from another department`.

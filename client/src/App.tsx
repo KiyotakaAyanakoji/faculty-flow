@@ -10,6 +10,7 @@ import { TaskManagementView } from './components/TaskManagementView';
 import { DashboardView } from './components/DashboardView';
 import { SyllabusManagementView } from './components/SyllabusManagementView';
 import { HandoverManagementView } from './components/HandoverManagementView';
+import { CalendarManagementView } from './components/CalendarManagementView';
 import { HealthCard } from './components/HealthCard';
 import { Layers, Terminal, Database, Sparkles, ShieldCheck } from 'lucide-react';
 import './App.css';
@@ -43,6 +44,7 @@ const MainAppContent: React.FC = () => {
             {activeTab === 'tasks' && <TaskManagementView />}
             {activeTab === 'syllabus' && <SyllabusManagementView />}
             {activeTab === 'handovers' && <HandoverManagementView />}
+            {activeTab === 'calendar' && <CalendarManagementView />}
             {activeTab === 'faculty' && <DepartmentFacultyView />}
             {activeTab === 'users' && user.role === 'SYSTEM_ADMIN' && <UserManagementView />}
             {activeTab === 'overview' && <RoleMatrixView />}

@@ -42,9 +42,9 @@ describe('Role-Specific Dashboards & Workload API Test Suite (Phase 4)', () => {
     await pool.query(
       `INSERT INTO tasks (title, description, category, priority, status, due_date, creator_id, assignee_id, department_id)
        VALUES 
-         ('[TEST] Active Upcoming Task', 'Due in 3 days', 'Teaching', 'High', 'In Progress', DATE_ADD(CURRENT_DATE(), INTERVAL 3 DAY), ?, ?, ?),
-         ('[TEST] Overdue Critical Task', 'Was due yesterday', 'Grading', 'High', 'Pending', DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), ?, ?, ?),
-         ('[TEST] Completed Task', 'Done earlier', 'Research', 'Low', 'Completed', CURRENT_DATE(), ?, ?, ?)`,
+         ('[DASHBOARD-TEST] Active Upcoming Task', 'Due in 3 days', 'Teaching', 'High', 'In Progress', DATE_ADD(CURRENT_DATE(), INTERVAL 3 DAY), ?, ?, ?),
+         ('[DASHBOARD-TEST] Overdue Critical Task', 'Was due yesterday', 'Grading', 'High', 'Pending', DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), ?, ?, ?),
+         ('[DASHBOARD-TEST] Completed Task', 'Done earlier', 'Research', 'Low', 'Completed', CURRENT_DATE(), ?, ?, ?)`,
       [
         profCsUserId, asstCsUserId, csDeptId,
         profCsUserId, asstCsUserId, csDeptId,
@@ -55,14 +55,14 @@ describe('Role-Specific Dashboards & Workload API Test Suite (Phase 4)', () => {
     // Create seed syllabus
     await pool.query(
       `INSERT INTO syllabuses (department_id, course_code, course_name, academic_year, semester, total_units, completed_units, completion_percentage, status, faculty_id)
-       VALUES (?, '[TEST]-CS401', 'Distributed Systems', '2026-2027', 'Semester 7', 5, 2, 40.00, 'In Progress', ?)`,
+       VALUES (?, '[DASHBOARD-TEST]-CS401', 'Distributed Systems', '2026-2027', 'Semester 7', 5, 2, 40.00, 'In Progress', ?)`,
       [csDeptId, profCsUserId]
     );
   });
 
   afterAll(async () => {
-    await pool.query('DELETE FROM tasks WHERE title LIKE ?', ['[TEST] %']);
-    await pool.query('DELETE FROM syllabuses WHERE course_code LIKE ?', ['[TEST]-%']);
+    await pool.query('DELETE FROM tasks WHERE title LIKE ?', ['[DASHBOARD-TEST] %']);
+    await pool.query('DELETE FROM syllabuses WHERE course_code LIKE ?', ['[DASHBOARD-TEST]-%']);
   });
 
   it('System Admin: Receives infrastructure metrics and NO academic task data', async () => {
@@ -135,7 +135,7 @@ describe('Role-Specific Dashboards & Workload API Test Suite (Phase 4)', () => {
     expect(res.status).toBe(200);
     expect(res.body.dashboard.role).toBe('PROFESSOR');
     expect(res.body.dashboard.createdTasks.total).toBeGreaterThanOrEqual(3);
-    expect(res.body.dashboard.assignedSyllabuses.some((s: any) => s.courseCode === '[TEST]-CS401')).toBe(true);
+    expect(res.body.dashboard.assignedSyllabuses.some((s: any) => s.courseCode === '[DASHBOARD-TEST]-CS401')).toBe(true);
 
     // Professor does not get the full faculty workload breakdown table
     expect(res.body.dashboard.facultyWorkload).toBeUndefined();
