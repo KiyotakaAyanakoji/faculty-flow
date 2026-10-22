@@ -11,6 +11,7 @@ import {
   getSafeFilePath,
   deleteStoredFile,
 } from '../services/storage.service.js';
+import { enqueueNotification, NOTIFICATION_EVENTS } from '../services/email/index.js';
 
 function parseId(param: string | string[] | undefined): number {
   const val = Array.isArray(param) ? param[0] : param;
@@ -369,6 +370,33 @@ export async function createEvent(req: Request, res: Response): Promise<void> {
         `INSERT INTO event_participants (event_id, user_id, status) VALUES ?`,
         [participantValues]
       );
+
+      // Phase 7: Enqueue event invitation notifications
+      const [participantUsers] = await connection.query<any[]>(
+        'SELECT id, email, full_name FROM users WHERE id IN (?)',
+        [participantIds]
+      );
+      for (const p of participantUsers) {
+        await enqueueNotification(
+          {
+            idempotencyKey: `event-invite-${newEventId}-${p.id}`,
+            eventType: NOTIFICATION_EVENTS.EVENT_INVITATION,
+            recipientEmail: p.email,
+            recipientName: p.full_name,
+            recipientId: p.id,
+            templateId: NOTIFICATION_EVENTS.EVENT_INVITATION,
+            payload: {
+              title: data.title,
+              category: data.category,
+              startTime: formatIso(data.startTime),
+              endTime: formatIso(data.endTime),
+              location: data.location || 'Campus / Online',
+              creatorName: user.fullName || 'Event Organizer',
+            },
+          },
+          connection
+        );
+      }
     }
 
     await connection.commit();
@@ -534,6 +562,36 @@ export async function updateEvent(req: Request, res: Response): Promise<void> {
         `UPDATE academic_events SET ${updates.join(', ')} WHERE id = ?`,
         values
       );
+
+      // Phase 7: If schedule or location changed, notify participants
+      const scheduleChanged = data.startTime !== undefined || data.endTime !== undefined || data.location !== undefined;
+      if (scheduleChanged) {
+        const [pUsers] = await connection.query<any[]>(
+          `SELECT u.id, u.email, u.full_name 
+           FROM event_participants ep 
+           JOIN users u ON ep.user_id = u.id 
+           WHERE ep.event_id = ?`,
+          [eventId]
+        );
+        for (const p of pUsers) {
+          await enqueueNotification(
+            {
+              idempotencyKey: `event-updated-${eventId}-${p.id}`,
+              eventType: NOTIFICATION_EVENTS.EVENT_UPDATED,
+              recipientEmail: p.email,
+              recipientName: p.full_name,
+              recipientId: p.id,
+              templateId: NOTIFICATION_EVENTS.EVENT_UPDATED,
+              payload: {
+                title: data.title || currentEvent.title,
+                startTime: data.startTime ? formatIso(data.startTime) : formatIso(currentEvent.start_time),
+                location: data.location !== undefined ? data.location : currentEvent.location,
+              },
+            },
+            connection
+          );
+        }
+      }
     }
 
     await connection.commit();
@@ -590,6 +648,15 @@ export async function deleteEvent(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Retrieve participants to notify before deletion
+    const [pUsers] = await pool.query<any[]>(
+      `SELECT u.id, u.email, u.full_name 
+       FROM event_participants ep 
+       JOIN users u ON ep.user_id = u.id 
+       WHERE ep.event_id = ?`,
+      [eventId]
+    );
+
     // Retrieve documents to clean up storage files
     const [docs] = await pool.query<any[]>(
       `SELECT file_identifier FROM event_documents WHERE event_id = ?`,
@@ -598,6 +665,21 @@ export async function deleteEvent(req: Request, res: Response): Promise<void> {
 
     // Delete event (foreign keys CASCADE to participants and documents)
     await pool.query(`DELETE FROM academic_events WHERE id = ?`, [eventId]);
+
+    // Enqueue cancellation notifications for participants
+    for (const p of pUsers) {
+      await enqueueNotification({
+        idempotencyKey: `event-cancelled-${eventId}-${p.id}`,
+        eventType: NOTIFICATION_EVENTS.EVENT_CANCELLED,
+        recipientEmail: p.email,
+        recipientName: p.full_name,
+        recipientId: p.id,
+        templateId: NOTIFICATION_EVENTS.EVENT_CANCELLED,
+        payload: {
+          title: currentEvent.title,
+        },
+      });
+    }
 
     // Unlink physical files
     for (const doc of docs) {

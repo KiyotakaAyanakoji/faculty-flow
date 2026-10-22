@@ -19,6 +19,7 @@ import {
   LeaveRequest,
 } from '../types/leave.types.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { enqueueNotification, NOTIFICATION_EVENTS } from '../services/email/index.js';
 
 /**
  * Calculate leave duration in days.
@@ -334,6 +335,52 @@ export async function submitLeaveRequest(
        VALUES (?, ?, 'SUBMITTED', 'Pending', ?, ?)`,
       [requestId, userId, userId, `Submitted ${daysCount} day(s) leave request.`]
     );
+
+    // Phase 7: Enqueue submission acknowledgement to requester
+    await enqueueNotification(
+      {
+        idempotencyKey: `leave-submitted-${requestId}-${userId}`,
+        eventType: NOTIFICATION_EVENTS.LEAVE_SUBMITTED,
+        recipientEmail: req.user!.email,
+        recipientName: req.user!.fullName,
+        recipientId: userId,
+        templateId: NOTIFICATION_EVENTS.LEAVE_SUBMITTED,
+        payload: {
+          leaveTypeName: leaveType.name,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+          daysCount,
+        },
+      },
+      connection
+    );
+
+    // Phase 7: Enqueue notification to departmental HOD(s)
+    const [hodRows] = await connection.query<RowDataPacket[]>(
+      `SELECT id, email, full_name FROM users WHERE department_id = ? AND role = 'HOD' AND is_active = 1 AND id != ?`,
+      [departmentId, userId]
+    );
+    for (const hod of hodRows) {
+      await enqueueNotification(
+        {
+          idempotencyKey: `leave-pending-${requestId}-${hod.id}`,
+          eventType: NOTIFICATION_EVENTS.LEAVE_PENDING_APPROVAL,
+          recipientEmail: hod.email,
+          recipientName: hod.full_name,
+          recipientId: hod.id,
+          templateId: NOTIFICATION_EVENTS.LEAVE_PENDING_APPROVAL,
+          payload: {
+            requesterName: req.user!.fullName,
+            leaveTypeName: leaveType.name,
+            startDate: parsed.startDate,
+            endDate: parsed.endDate,
+            daysCount,
+            reason: parsed.reason,
+          },
+        },
+        connection
+      );
+    }
 
     await connection.commit();
 
@@ -785,6 +832,37 @@ export async function decideLeaveRequest(
       ]
     );
 
+    // Phase 7: Fetch requester details for decision notification
+    const [requesterRows] = await connection.query<RowDataPacket[]>(
+      'SELECT email, full_name FROM users WHERE id = ?',
+      [leaveReq.user_id]
+    );
+    if (requesterRows.length > 0) {
+      const requester = requesterRows[0];
+      const isApproved = parsed.status === 'Approved';
+      const eventType = isApproved ? NOTIFICATION_EVENTS.LEAVE_APPROVED : NOTIFICATION_EVENTS.LEAVE_REJECTED;
+
+      await enqueueNotification(
+        {
+          idempotencyKey: `leave-decided-${requestId}-${parsed.status.toLowerCase()}`,
+          eventType,
+          recipientEmail: requester.email,
+          recipientName: requester.full_name,
+          recipientId: leaveReq.user_id,
+          templateId: eventType,
+          payload: {
+            leaveTypeName: leaveType.name,
+            startDate: formatDate(leaveReq.start_date),
+            endDate: formatDate(leaveReq.end_date),
+            daysCount,
+            approverName: req.user!.fullName,
+            decisionNotes: parsed.decisionNotes || (isApproved ? 'Approved by Department HOD.' : 'Request could not be accommodated.'),
+          },
+        },
+        connection
+      );
+    }
+
     await connection.commit();
 
     await logAuditEvent({
@@ -934,6 +1012,25 @@ export async function cancelLeaveRequest(
         userId,
         parsed.notes || 'Cancelled by requester.',
       ]
+    );
+
+    // Phase 7: Enqueue cancellation notification to requester
+    await enqueueNotification(
+      {
+        idempotencyKey: `leave-cancelled-${requestId}`,
+        eventType: NOTIFICATION_EVENTS.LEAVE_CANCELLED,
+        recipientEmail: req.user!.email,
+        recipientName: req.user!.fullName,
+        recipientId: userId,
+        templateId: NOTIFICATION_EVENTS.LEAVE_CANCELLED,
+        payload: {
+          leaveTypeName: leaveType.name,
+          startDate: formatDate(leaveReq.start_date),
+          endDate: formatDate(leaveReq.end_date),
+          reason: parsed.notes || 'Cancelled by requester',
+        },
+      },
+      connection
     );
 
     await connection.commit();

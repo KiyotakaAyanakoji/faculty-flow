@@ -1,7 +1,7 @@
 # Faculty Flow 2.0
 
 > Modern Academic Operations & Faculty Management System
-> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers** • **Phase 5: Academic Calendar, Events & Secure PDF Uploads** • **Phase 6: Leave Management**
+> **Phase 1: Foundation Layer** • **Phase 2: Authentication & RBAC** • **Phase 3: Task Management & Faculty Assignments** • **Phase 4: Dashboards, Workload, Syllabus & Handovers** • **Phase 5: Academic Calendar, Events & Secure PDF Uploads** • **Phase 6: Leave Management** • **Phase 7: Email Notifications**
 
 Faculty Flow 2.0 is an enterprise-grade academic operations platform designed for higher education institutions. This repository features a modular, decoupled full-stack architecture built with React 19 (Vite + TypeScript), Node.js (Express + TypeScript), and MySQL.
 
@@ -41,16 +41,18 @@ faculty_flow/
 │   │   │   │   ├── 003_tasks_and_assignments.sql     # Tasks, Assignments, Statuses, Deadlines
 │   │   │   │   ├── 004_syllabus_and_handovers.sql    # Syllabuses, Units, Faculty Handovers, Task Linkages
 │   │   │   │   ├── 005_academic_calendar_and_documents.sql # Academic Events, Attendees, Secure PDF Attachments
-│   │   │   │   └── 006_leave_management.sql          # Leave Types, Balances, Requests, Audit Records
+│   │   │   │   ├── 006_leave_management.sql          # Leave Types, Balances, Requests, Audit Records
+│   │   │   │   └── 007_email_notifications.sql       # Durable Email Queue, Retries, Idempotency & Locking (Phase 7)
 │   │   │   ├── migrate.ts                            # Migration runner
 │   │   │   └── seed.ts                               # Safe development database seeder
 │   │   ├── middleware/         # Auth verification, RBAC guards, rate limiter, upload/magic bytes, error handlers
 │   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks, /dashboard, /syllabus, /handovers, /events, /leaves)
-│   │   ├── services/           # JWT & DB-backed refresh token service, audit logging, safe storage service
+│   │   ├── services/           # Services (auth, audit, storage) & Email notification subsystem (Phase 7)
+│   │   │   └── email/          # Email transports (SMTP, Dev, Mock), templates, sanitizer, queue service & worker
 │   │   ├── types/              # Server user, token, task, dashboard, syllabus, handover, event, leave Express typings
 │   │   ├── validators/         # Zod schemas for input validation (auth, user, task, syllabus, handover, event, leave)
 │   │   ├── app.ts              # Express application factory & middleware chain
-│   │   └── index.ts            # Server entry point with DB check & graceful shutdown
+│   │   └── index.ts            # Server entry point with DB check, worker lifecycle & graceful shutdown
 │   ├── test/                   # Vitest + Supertest backend test suites
 │   │   ├── auth.test.ts        # Authentication, password hashing, and cookie tests
 │   │   ├── rbac.test.ts        # Role permissions, department isolation, and matrix tests
@@ -60,6 +62,7 @@ faculty_flow/
 │   │   ├── handovers.test.ts   # Faculty handover lifecycle, task linkage & permissions (Phase 4)
 │   │   ├── events.test.ts      # Academic calendar, attendee validation, secure PDF uploads & magic bytes (Phase 5)
 │   │   ├── leaves.test.ts      # Faculty leave management, concurrency, row-locking & RBAC (Phase 6)
+│   │   ├── notifications.test.ts # Email queue, retries, worker concurrency, and template tests (Phase 7)
 │   │   └── health.test.ts      # Phase 1 health check smoke tests
 │   ├── uploads/                # Private local storage directory for secured PDF attachments (.gitignored)
 │   ├── .env.example            # Server environment template
@@ -234,12 +237,30 @@ faculty_flow/
     - `reason` (VARCHAR(255)): Human-readable audit note.
     - `actor_id` (FK -> `users.id` ON DELETE SET NULL): User triggering the action.
     - `created_at` (TIMESTAMP): Event timestamp.
-15. **`schema_migrations`**:
-    - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`, `005`, `006`) with transaction rollback safety.
+15. **`email_notifications`** (Phase 7):
+    - `id` (INT PK AI): Unique notification queue record identifier.
+    - `idempotency_key` (VARCHAR(255) UNIQUE): Deterministic idempotency key preventing duplicate enqueueing and delivery.
+    - `event_type` (VARCHAR(50)): Event name (e.g. `TASK_ASSIGNED`, `LEAVE_APPROVED`, `EVENT_INVITATION`, `HANDOVER_CREATED`).
+    - `recipient_email` (VARCHAR(255)): Validated recipient email address.
+    - `recipient_name` (VARCHAR(255) NULL): Sanitized recipient display name.
+    - `recipient_id` (FK -> `users.id` ON DELETE SET NULL): Optional user link.
+    - `template_id` (VARCHAR(50)): Registered template identifier.
+    - `template_data` (JSON): Sanitized event metadata and parameters.
+    - `status` (ENUM('Pending', 'Processing', 'Sent', 'Failed') DEFAULT 'Pending'): Delivery lifecycle state.
+    - `attempts` (INT UNSIGNED DEFAULT 0): Delivery attempt counter.
+    - `max_attempts` (INT UNSIGNED DEFAULT 5): Configurable retry threshold.
+    - `next_retry_at` (TIMESTAMP NULL): Exponential backoff schedule.
+    - `locked_at` / `locked_by` (TIMESTAMP NULL / VARCHAR(100) NULL): Distributed worker lease concurrency locks.
+    - `error_summary` (TEXT NULL): Sanitized error message without leaking credentials or tokens.
+    - `sent_at` (TIMESTAMP NULL): Successful delivery timestamp.
+    - `created_at` / `updated_at` (TIMESTAMP): Audit timestamps.
+    - **Indexes**: `(status, next_retry_at)`, `(locked_at)`, `(recipient_email)`, `(event_type)`, `UNIQUE (idempotency_key)`.
+16. **`schema_migrations`**:
+    - Tracks executed migration files in sequence (`001`, `002`, `003`, `004`, `005`, `006`, `007`) with transaction rollback safety.
 
 ### Migration Commands
 ```bash
-# Run pending migrations (applies 001, 002, 003, 004, 005, and 006)
+# Run pending migrations (applies 001, 002, 003, 004, 005, 006, and 007)
 npm run db:migrate
 
 # Seed development departments, faculty test accounts, and leave entitlements
@@ -375,6 +396,15 @@ JWT_EXPIRES_IN=15m
 REFRESH_TOKEN_EXPIRES_IN=7d
 COOKIE_SECRET=your_cookie_encryption_secret_here
 
+# Email Notifications (Phase 7)
+EMAIL_ENABLED=false
+SMTP_HOST=smtp.mailtrap.io
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your_smtp_username
+SMTP_PASS=your_smtp_password
+SMTP_FROM="Faculty Flow <noreply@facultyflow.local>"
+
 # Frontend Configuration (client/.env)
 VITE_API_URL=http://localhost:5000/api
 ```
@@ -393,10 +423,10 @@ npm run db:migrate
 # Seed development test accounts (password for all: Password@12345)
 npm run db:seed
 
-# Run all automated tests (108 tests total: 94 server, 14 client)
+# Run all automated tests (141 tests total: 127 server, 14 client across 17 test suites)
 npm run test
 
-# Run backend test suites (Supertest + Vitest)
+# Run backend test suites (Supertest + Vitest - 10 suites, 127 tests)
 npm run test:server
 
 # Run frontend test suites (React Testing Library + Vitest)
@@ -638,4 +668,240 @@ To verify role permissions, dashboards, syllabus tracking, handovers, calendar e
 9. **Unpaid Leave (LWP) Non-Deduction**:
    - Apply for `Unpaid Leave (LWP)` for 3 days.
    - Observe that paid Casual, Sick, and Earned leave balances remain unchanged.
+
+---
+
+## 📧 Email Notification Service & Background Queue (Phase 7)
+
+### 1. Notification Architecture & Modular Transport Abstraction
+
+Faculty Flow 2.0 implements a modular, server-side notification service designed to keep email delivery strictly non-blocking and decoupled from core business transactions.
+
+```text
+  ┌─────────────────────────────────────────────────────────┐
+  │                 Business Action Trigger                 │
+  │   (Task Assignment, Leave Decision, Event, Handover)    │
+  └────────────────────────────┬────────────────────────────┘
+                               │ (Atomically within MySQL Transaction)
+                               ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │         Durable Queue: `email_notifications`            │
+  │     (Pending | Processing | Sent | Failed)              │
+  └────────────────────────────┬────────────────────────────┘
+                               │ (Asynchronous Polling & Lease Locking)
+                               ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │      NotificationWorker (Bounded Batch Concurrency)     │
+  └────────────────────────────┬────────────────────────────┘
+                               │
+         ┌─────────────────────┼─────────────────────┐
+         ▼                     ▼                     ▼
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│ SmtpTransport    │  │ DevEmailTransport│  │ MockTransport    │
+│ (Nodemailer TLS) │  │ (Safe Local Log) │  │ (In-Memory Tests)│
+└──────────────────┘  └──────────────────┘  └──────────────────┘
+```
+
+- **Modular Transport Interface (`EmailTransport`)**: The notification subsystem is decoupled behind an `EmailTransport` contract (`sendMail({ to, toName, subject, html, text })`). This allows swapping SMTP for providers such as AWS SES, SendGrid, or Resend without touching any domain controller or event enqueueing code.
+- **Transports Provided**:
+  - `SmtpEmailTransport`: Maintained Nodemailer transport reading validated SMTP host, port, credentials, TLS settings, and sender address.
+  - `DevEmailTransport`: Default fallback for local development when `EMAIL_ENABLED=false` or SMTP is unconfigured. Generates sanitized log previews with masked email addresses (`j***e@domain.com`) and plain-text summaries without performing external network calls or leaking credentials.
+  - `MockEmailTransport`: Programmatic test double used in automated test suites with zero external network dependencies and built-in failure simulation.
+- **Fail-Safe Startup**: If `EMAIL_ENABLED=true` but SMTP credentials or host configuration are invalid, the server fails loudly at startup with a descriptive environment validation error (`validateEnv`), preventing silent delivery failures in production.
+- **Centralized Email Templates**: All 14 system notifications use standardized responsive HTML templates with academic branding and plain-text alternatives. All user-controlled fields (task titles, attendee names, notes, reasons) are strictly entity-escaped (`escapeHtml`) before HTML interpolation to eliminate Cross-Site Scripting (XSS). SMTP headers are stripped of CRLF characters (`sanitizeHeader`) to prevent header injection.
+
+---
+
+### 2. Notification Event Coverage & Recipient Policy
+
+| Domain | Event Type | Trigger Action | Intended Recipient | Idempotency Key Pattern | Department & Privacy Isolation |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Tasks** | `TASK_ASSIGNED` | Task created or delegated | Assignee faculty member | `task-assigned-${taskId}-${assigneeId}` | Only within permitted departmental allocation boundaries. |
+| **Tasks** | `TASK_UPDATED` | Task title, priority, due date, or category updated | Assignee faculty member | `task-updated-${taskId}-${updateTimestamp}` | Only assignee receives notification; department-isolated. |
+| **Tasks** | `TASK_REASSIGNED` | Task reassigned to another faculty member | New assignee faculty member | `task-reassigned-${taskId}-${newAssigneeId}-${timestamp}` | New assignee notified; previous assignee record updated cleanly. |
+| **Tasks** | `TASK_CANCELLED` | Task deleted by authorized creator or HOD | Assigned faculty member | `task-cancelled-${taskId}-${assigneeId}` | Assignee notified of cancellation; unassigned tasks skip email. |
+| **Leaves** | `LEAVE_SUBMITTED` | Faculty submits leave request | Requester faculty member | `leave-submit-ack-${leaveId}-${requesterId}` | Submission acknowledgement sent to requester only. |
+| **Leaves** | `LEAVE_PENDING_APPROVAL` | Faculty submits leave request | Department Head (HOD) | `leave-hod-queue-${leaveId}-${hodId}` | Routed strictly to HOD of requester's department. |
+| **Leaves** | `LEAVE_APPROVED` | HOD approves leave request | Requester faculty member | `leave-decision-${leaveId}-Approved` | Notification includes approved dates and HOD notes. |
+| **Leaves** | `LEAVE_REJECTED` | HOD rejects leave request | Requester faculty member | `leave-decision-${leaveId}-Rejected` | Notification includes rejected dates and mandatory reason. |
+| **Leaves** | `LEAVE_CANCELLED` | Requester cancels eligible leave | Requester faculty member | `leave-cancelled-${leaveId}-${requesterId}` | Cancellation confirmation sent to requester. |
+| **Calendar** | `EVENT_INVITATION` | Academic event scheduled with attendees | Each invited faculty member | `event-invite-${eventId}-${participantUserId}` | Sent individually to invited participants in department. |
+| **Calendar** | `EVENT_UPDATED` | Event date, time, or location materially changed | All invited/accepted attendees | `event-updated-${eventId}-${attendeeId}-${timestamp}` | Broadcast individually to affected attendees; no cross-recipient leakage. |
+| **Calendar** | `EVENT_CANCELLED` | Academic event deleted by creator or HOD | All invited/accepted attendees | `event-cancelled-${eventId}-${attendeeId}` | Broadcast individually to attendees regarding cancellation. |
+| **Handovers** | `HANDOVER_CREATED` | Faculty initiates academic handover | Designated recipient faculty | `handover-created-${handoverId}-${recipientId}` | Recipient receives context, deadline, and task details. |
+| **Handovers** | `HANDOVER_STATUS_UPDATED` | Handover accepted, rejected, or completed | Originating sender faculty | `handover-status-${handoverId}-${status}` | Sender notified of progress (Accepted, Rejected, Completed). |
+
+---
+
+### 3. Queue Schema, Idempotency & Transaction Safety
+
+1. **Transactional Enqueueing**:
+   - Notifications are enqueued within the *same* MySQL transaction as the business operation (`connection: PoolConnection` passed to `enqueueNotification`).
+   - If a business transaction fails or rolls back, the notification entry is discarded atomically.
+   - **Emails are never sent before the business transaction is committed to disk.**
+2. **Deterministic Idempotency**:
+   - `idempotency_key` has a `UNIQUE` constraint (`uq_email_notif_idempotency`).
+   - Insertion uses `INSERT IGNORE INTO email_notifications`, ensuring retried HTTP requests, network hiccups, or duplicate controller invocations do not produce duplicate emails.
+3. **Queue State Transitions**:
+   ```text
+   [ Enqueue ] ──► (Pending) ──► (Processing) ──► (Sent)
+                       ▲              │
+                       │              ▼
+                       └─── (Retry) ◄─┴─────────► (Failed)
+   ```
+   - **`Pending`**: Waiting for worker poll.
+   - **`Processing`**: Leased by an active worker (`locked_at`, `locked_by`).
+   - **`Sent`**: Successfully dispatched via transport (`sent_at` recorded).
+   - **`Failed`**: Reached maximum retry attempts (`max_attempts = 5`). Retains sanitized `error_summary`.
+
+---
+
+### 4. Background Worker Lifecycle, Concurrency & Lease Recovery
+
+The `NotificationWorker` manages resilient background email delivery:
+
+- **Startup & Concurrency**:
+  - Automatically started during server boot in non-test environments (`notificationWorker.start()`).
+  - Configurable polling interval (default: `5000ms`) and batch size (default: `10` jobs).
+  - Bounded concurrency ensures SMTP servers are not flooded.
+- **Atomic Row-Locking**:
+  - Uses `SELECT id FROM email_notifications WHERE status = 'Pending' ... FOR UPDATE` followed by atomic batch locking:
+    `UPDATE email_notifications SET status = 'Processing', locked_at = NOW(), locked_by = ? WHERE id IN (...)`
+  - Multiple worker instances running concurrently across clustered servers will never process the same email job twice.
+- **Exponential Backoff Retry**:
+  - On delivery failure, jobs are rescheduled with exponential backoff:
+    `next_retry_at = NOW() + INTERVAL (attempts * attempts * 30) SECOND`
+    - Attempt 1: +30 seconds
+    - Attempt 2: +120 seconds (2 mins)
+    - Attempt 3: +270 seconds (4.5 mins)
+    - Attempt 4: +480 seconds (8 mins)
+    - Attempt 5: Exceeds `max_attempts` $\rightarrow$ Marked as `Failed`.
+- **Lease Timeout & Crash Recovery**:
+  - If a worker crashes or encounters an unhandled exception while holding a job in `Processing`, `recoverStaleJobs()` automatically reclaims any job where `locked_at < NOW() - INTERVAL 5 MINUTE` and resets its status to `Pending`.
+- **Graceful Shutdown**:
+  - Traps `SIGINT` and `SIGTERM` signals via `notificationWorker.stop()`.
+  - Clears active polling timers, waits for currently running job dispatches to settle, and releases database connections cleanly.
+
+---
+
+### 5. Environment Configuration & Local Development
+
+#### Required Environment Variables (`server/.env`)
+
+```env
+# Email Notification Configuration
+EMAIL_ENABLED=false
+SMTP_HOST=smtp.mailtrap.io
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=safe_placeholder_user
+SMTP_PASS=safe_placeholder_pass
+SMTP_FROM="Faculty Flow <no-reply@facultyflow.local>"
+```
+
+#### Local Development Behavior
+- When `EMAIL_ENABLED=false` (the default in `.env.example`):
+  - The application and database queue run normally.
+  - Notifications are enqueued and processed by `DevEmailTransport`.
+  - Sanitized previews are logged to the console showing event type, subject, and masked recipient address (`a***t@facultyflow.local`).
+  - **No external network connections or SMTP credentials are required.**
+
+#### Configuring an SMTP Provider (Without Committing Credentials)
+1. Copy `.env.example` to `server/.env` (which is excluded from Git via `.gitignore`).
+2. Set `EMAIL_ENABLED=true`.
+3. Fill in your SMTP relay credentials (e.g., Mailtrap, SendGrid, Amazon SES SMTP, or institutional mail gateway):
+   - `SMTP_HOST=smtp.sendgrid.net`
+   - `SMTP_PORT=587`
+   - `SMTP_SECURE=false`
+   - `SMTP_USER=apikey`
+   - `SMTP_PASS=your_actual_api_key_here`
+   - `SMTP_FROM="Faculty Flow <notifications@yourinstitution.edu>"`
+4. Start the backend: `npm run dev:server`.
+5. **Never commit `.env` or credentials to version control.**
+
+> [!WARNING]
+> **Production Notice**: Production email delivery requires an authorized, valid SMTP host (e.g. an institutional relay or transactional email provider) and a verified end-to-end integration test. Do not claim that production email delivery works without an authorized SMTP configuration.
+
+---
+
+### 6. Safe Automated Testing Runbook
+
+Automated tests for notifications and queue workers use `MockEmailTransport` or `DevEmailTransport` to guarantee that **no real emails are ever sent during tests**.
+
+#### Test Scope (`server/test/notifications.test.ts`):
+- HTML entity escaping and XSS injection defense (`escapeHtml`).
+- SMTP header injection prevention (`sanitizeHeader`).
+- Credential and token redaction in logs (`sanitizeErrorMessage`).
+- Template rendering for all 14 domain events with fallback plain text.
+- Development mode preview logging (`DevEmailTransport`).
+- Validation failure when SMTP is enabled with invalid settings.
+- Transactional enqueueing and rollback atomicity.
+- Idempotency key deduplication (`INSERT IGNORE`).
+- Background worker execution, atomic locking, and status transitions.
+- Transient delivery failure and exponential backoff scheduling.
+- Permanent failure handling upon exceeding `max_attempts`.
+- Worker crash recovery (`recoverStaleJobs`).
+- Concurrent worker processing safety without collisions.
+- Clean worker shutdown.
+- Controller event integrations (Tasks, Leaves, Calendar Events, Handovers).
+- Department isolation and permission boundary enforcement.
+
+#### Run Test Suites Safely
+```bash
+# Run notification unit and integration test suite
+npm run test:server -- server/test/notifications.test.ts
+
+# Run entire backend test suite (127 tests across 10 test suites)
+npm run test:server
+
+# Run entire fullstack test suite (141 tests across 17 test suites)
+npm run test
+```
+
+---
+
+### 7. Production Operational Considerations
+
+#### Queue Monitoring Queries
+System administrators and DevOps engineers can monitor queue health using standard SQL queries:
+
+```sql
+-- 1. Check current queue backlog by status
+SELECT status, COUNT(*) AS count
+FROM email_notifications
+GROUP BY status;
+
+-- 2. Inspect failing or dead-letter notifications
+SELECT id, event_type, recipient_email, attempts, max_attempts, next_retry_at, error_summary, created_at
+FROM email_notifications
+WHERE status = 'Failed'
+ORDER BY created_at DESC
+LIMIT 50;
+
+-- 3. Check for stale jobs currently locked by workers
+SELECT id, event_type, locked_by, locked_at, TIMESTAMPDIFF(MINUTE, locked_at, NOW()) AS locked_minutes_ago
+FROM email_notifications
+WHERE status = 'Processing'
+ORDER BY locked_at ASC;
+```
+
+#### Queue Maintenance & Purging
+To prevent unbounded table growth in high-volume environments, configure a recurring maintenance cron job:
+
+```sql
+-- Purge successfully sent notifications older than 60 days
+DELETE FROM email_notifications
+WHERE status = 'Sent' AND sent_at < NOW() - INTERVAL 60 DAY;
+
+-- Purge permanently failed notifications older than 90 days after review
+DELETE FROM email_notifications
+WHERE status = 'Failed' AND updated_at < NOW() - INTERVAL 90 DAY;
+```
+
+#### Credential Rotation
+When rotating SMTP passwords or API keys:
+1. Update secrets in your production secrets manager / environment configuration.
+2. Trigger a graceful restart of the server instances.
+3. Because credentials are read directly from process environment variables and never persisted to the database or cached on disk, rotated credentials take effect immediately upon reboot with zero queue loss.
+
 

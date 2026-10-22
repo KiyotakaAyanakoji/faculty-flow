@@ -1,6 +1,7 @@
 import { app } from './app.js';
 import { env } from './config/env.js';
 import { testDatabaseConnection, pool } from './config/database.js';
+import { notificationWorker } from './services/email/index.js';
 
 const PORT = env.PORT;
 
@@ -11,6 +12,7 @@ const server = app.listen(PORT, async () => {
   console.log(` Port        : ${PORT}`);
   console.log(` Health API  : http://localhost:${PORT}/api/health`);
   console.log(` Client URL  : ${env.CLIENT_URL}`);
+  console.log(` Email Mode  : ${env.EMAIL_ENABLED ? 'SMTP Active' : 'Dev / Disabled'}`);
   console.log(`========================================`);
 
   // Verify database connectivity on boot
@@ -25,11 +27,26 @@ const server = app.listen(PORT, async () => {
     }
     console.warn('Note: Database can be started anytime without restarting the server.');
   }
+
+  // Start background notification queue worker
+  if (env.NODE_ENV !== 'test') {
+    notificationWorker.start();
+    console.log('Notification queue worker started.');
+  }
 });
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {
   console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  
+  // Stop notification worker first
+  try {
+    await notificationWorker.stop();
+    console.log('Notification queue worker stopped.');
+  } catch (workerErr) {
+    console.error('Error stopping notification worker:', workerErr);
+  }
+
   server.close(async () => {
     console.log('HTTP server closed.');
     try {

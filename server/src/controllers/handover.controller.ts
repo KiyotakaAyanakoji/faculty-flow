@@ -9,6 +9,7 @@ import {
 } from '../validators/handover.validators.js';
 import { HandoverRecord, HandoverResponse } from '../types/handover.types.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { enqueueNotification, NOTIFICATION_EVENTS } from '../services/email/index.js';
 
 export function formatHandoverResponse(row: HandoverRecord): HandoverResponse {
   const formatDueDate = (d: string | Date | null): string | null => {
@@ -107,7 +108,7 @@ export async function createHandover(req: Request, res: Response, next: NextFunc
 
     // Verify recipient in same department and active
     const [recipRows] = await pool.query<any[]>(
-      'SELECT id, department_id, is_active FROM users WHERE id = ?',
+      'SELECT id, department_id, full_name, email, is_active FROM users WHERE id = ?',
       [validated.recipientId]
     );
 
@@ -195,6 +196,22 @@ export async function createHandover(req: Request, res: Response, next: NextFunc
         departmentId,
       },
       ipAddress: req.ip,
+    });
+
+    // Enqueue notification to the handover recipient
+    await enqueueNotification({
+      idempotencyKey: `handover-created-${newId}-${recipRows[0].id}`,
+      eventType: NOTIFICATION_EVENTS.HANDOVER_CREATED,
+      recipientEmail: recipRows[0].email,
+      recipientName: recipRows[0].full_name,
+      recipientId: recipRows[0].id,
+      templateId: NOTIFICATION_EVENTS.HANDOVER_CREATED,
+      payload: {
+        title: validated.title,
+        senderName: req.user.fullName,
+        notes: validated.notes,
+        dueDate: validated.dueDate || 'No target date',
+      },
     });
 
     res.status(201).json({
@@ -422,6 +439,28 @@ export async function updateHandoverStatus(req: Request, res: Response, next: Ne
       },
       ipAddress: req.ip,
     });
+
+    // Notify the sender about recipient's status decision
+    const [senderRows] = await pool.query<any[]>(
+      'SELECT email, full_name FROM users WHERE id = ?',
+      [existing.sender_id]
+    );
+    if (senderRows.length > 0) {
+      await enqueueNotification({
+        idempotencyKey: `handover-status-${handoverId}-${validated.status}`,
+        eventType: NOTIFICATION_EVENTS.HANDOVER_STATUS_UPDATED,
+        recipientEmail: senderRows[0].email,
+        recipientName: senderRows[0].full_name,
+        recipientId: existing.sender_id,
+        templateId: NOTIFICATION_EVENTS.HANDOVER_STATUS_UPDATED,
+        payload: {
+          title: existing.title,
+          status: validated.status,
+          recipientName: req.user.fullName,
+          responseNotes: validated.responseNotes || 'No response notes provided.',
+        },
+      });
+    }
 
     res.status(200).json({
       success: true,

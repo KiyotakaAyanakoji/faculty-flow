@@ -16,6 +16,7 @@ import {
 } from '../validators/task.validators.js';
 import { TaskRecord, TaskResponse, TaskSummaryResponse } from '../types/task.types.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { enqueueNotification, NOTIFICATION_EVENTS } from '../services/email/index.js';
 
 /**
  * Format a database task row into a clean TaskResponse
@@ -107,7 +108,7 @@ export async function createTask(req: Request, res: Response, next: NextFunction
 
     // Fetch target assignee from DB
     const [assigneeRows] = await pool.query<any[]>(
-      'SELECT id, role, department_id, full_name, is_active FROM users WHERE id = ?',
+      'SELECT id, role, department_id, full_name, email, is_active FROM users WHERE id = ?',
       [assigneeId]
     );
 
@@ -169,6 +170,24 @@ export async function createTask(req: Request, res: Response, next: NextFunction
       targetId: taskId,
       details: { title, category, priority, assigneeId: assignee.id, dueDate },
       ipAddress: req.ip || req.socket.remoteAddress,
+    });
+
+    // Enqueue task assignment notification to the assignee
+    await enqueueNotification({
+      idempotencyKey: `task-assigned-${taskId}-${assignee.id}`,
+      eventType: NOTIFICATION_EVENTS.TASK_ASSIGNED,
+      recipientEmail: assignee.email,
+      recipientName: assignee.full_name,
+      recipientId: assignee.id,
+      templateId: NOTIFICATION_EVENTS.TASK_ASSIGNED,
+      payload: {
+        title,
+        category,
+        priority,
+        dueDate,
+        creatorName: req.user.fullName || 'Academic Supervisor',
+        description: description || 'No description provided',
+      },
     });
 
     const [createdRows] = await pool.query<any[]>(
@@ -414,6 +433,27 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
         details: parseResult.data,
         ipAddress: req.ip || req.socket.remoteAddress,
       });
+
+      // Notify assignee of updated task details
+      const [assigneeUser] = await pool.query<any[]>(
+        'SELECT email, full_name FROM users WHERE id = ?',
+        [task.assignee_id]
+      );
+      if (assigneeUser.length > 0) {
+        await enqueueNotification({
+          idempotencyKey: `task-updated-${taskId}-${task.assignee_id}`,
+          eventType: NOTIFICATION_EVENTS.TASK_UPDATED,
+          recipientEmail: assigneeUser[0].email,
+          recipientName: assigneeUser[0].full_name,
+          recipientId: task.assignee_id,
+          templateId: NOTIFICATION_EVENTS.TASK_UPDATED,
+          payload: {
+            title: parseResult.data.title || task.title,
+            updatedFields: updates.map(u => u.split(' =')[0]).join(', '),
+            updatedBy: req.user.fullName,
+          },
+        });
+      }
     }
 
     const [updated] = await pool.query<any[]>(`${TASK_SELECT_QUERY} WHERE t.id = ?`, [taskId]);
@@ -469,7 +509,7 @@ export async function reassignTask(req: Request, res: Response, next: NextFuncti
 
     // Fetch new assignee
     const [targetRows] = await pool.query<any[]>(
-      'SELECT id, role, department_id, is_active FROM users WHERE id = ?',
+      'SELECT id, role, department_id, full_name, email, is_active FROM users WHERE id = ?',
       [assigneeId]
     );
 
@@ -515,6 +555,21 @@ export async function reassignTask(req: Request, res: Response, next: NextFuncti
       targetId: taskId,
       details: { previousAssigneeId: task.assignee_id, newAssigneeId: assigneeId },
       ipAddress: req.ip || req.socket.remoteAddress,
+    });
+
+    // Enqueue task reassignment notification to new assignee
+    await enqueueNotification({
+      idempotencyKey: `task-reassigned-${taskId}-${newAssignee.id}`,
+      eventType: NOTIFICATION_EVENTS.TASK_REASSIGNED,
+      recipientEmail: newAssignee.email,
+      recipientName: newAssignee.full_name,
+      recipientId: newAssignee.id,
+      templateId: NOTIFICATION_EVENTS.TASK_REASSIGNED,
+      payload: {
+        title: task.title,
+        reassignedBy: req.user.fullName,
+        dueDate: task.due_date,
+      },
     });
 
     const [updated] = await pool.query<any[]>(`${TASK_SELECT_QUERY} WHERE t.id = ?`, [taskId]);
@@ -648,6 +703,26 @@ export async function deleteTask(req: Request, res: Response, next: NextFunction
       details: { title: task.title, category: task.category },
       ipAddress: req.ip || req.socket.remoteAddress,
     });
+
+    // Notify assignee that task was cancelled/deleted
+    const [assigneeUser] = await pool.query<any[]>(
+      'SELECT email, full_name FROM users WHERE id = ?',
+      [task.assignee_id]
+    );
+    if (assigneeUser.length > 0) {
+      await enqueueNotification({
+        idempotencyKey: `task-cancelled-${taskId}-${task.assignee_id}`,
+        eventType: NOTIFICATION_EVENTS.TASK_CANCELLED,
+        recipientEmail: assigneeUser[0].email,
+        recipientName: assigneeUser[0].full_name,
+        recipientId: task.assignee_id,
+        templateId: NOTIFICATION_EVENTS.TASK_CANCELLED,
+        payload: {
+          title: task.title,
+          cancelledBy: req.user.fullName,
+        },
+      });
+    }
 
     res.status(200).json({
       success: true,

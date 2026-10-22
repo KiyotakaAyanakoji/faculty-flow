@@ -20,6 +20,39 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('15m'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
   COOKIE_SECRET: z.string().default('faculty_flow_cookie_secret_dev'),
+
+  // Phase 7: Email Notifications & SMTP Configuration
+  EMAIL_ENABLED: z
+    .preprocess(val => {
+      if (typeof val === 'string') {
+        const lower = val.trim().toLowerCase();
+        return lower === 'true' || lower === '1';
+      }
+      return Boolean(val);
+    }, z.boolean())
+    .default(false),
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z
+    .preprocess(val => {
+      if (typeof val === 'string') {
+        const lower = val.trim().toLowerCase();
+        return lower === 'true' || lower === '1';
+      }
+      return Boolean(val);
+    }, z.boolean())
+    .default(false),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  SMTP_FROM: z.string().default('Faculty Flow <noreply@facultyflow.local>'),
+}).refine(data => {
+  if (data.EMAIL_ENABLED) {
+    return data.SMTP_HOST.trim().length > 0;
+  }
+  return true;
+}, {
+  message: 'SMTP_HOST must be provided and non-empty when EMAIL_ENABLED is true',
+  path: ['SMTP_HOST'],
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
