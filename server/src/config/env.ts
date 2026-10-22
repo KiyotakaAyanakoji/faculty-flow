@@ -16,6 +16,10 @@ const envSchema = z.object({
   DB_PASSWORD: z.string().default(''),
   DB_NAME: z.string().default('faculty_flow_db'),
   DB_CONNECTION_LIMIT: z.coerce.number().default(10),
+  JWT_SECRET: z.string().default('faculty_flow_default_dev_secret_change_in_production'),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
+  COOKIE_SECRET: z.string().default('faculty_flow_cookie_secret_dev'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

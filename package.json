@@ -20,7 +20,8 @@
     "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=client",
     "typecheck:server": "npm run typecheck --workspace=server",
     "typecheck:client": "npm run typecheck --workspace=client",
-    "db:migrate": "npm run db:migrate --workspace=server"
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "db:seed": "npm run db:seed --workspace=server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -1,71 +1,119 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginForm } from './components/LoginForm';
+import { Navbar } from './components/Navbar';
+import { RoleMatrixView } from './components/RoleMatrixView';
+import { DepartmentFacultyView } from './components/DepartmentFacultyView';
+import { UserManagementView } from './components/UserManagementView';
+import { TaskPolicySimulator } from './components/TaskPolicySimulator';
 import { HealthCard } from './components/HealthCard';
 import { Layers, Terminal, Database, Sparkles, ShieldCheck } from 'lucide-react';
 import './App.css';
 
-export const App: React.FC = () => {
+const MainAppContent: React.FC = () => {
+  const { user, loading } = useAuth();
+  const [activeTab, setActiveTab] = useState<string>('overview');
+
+  if (loading && !user) {
+    return (
+      <div className="app-container" style={{ textAlign: 'center', paddingTop: '8rem' }}>
+        <div className="brand-badge">
+          <Sparkles size={14} className="spin" /> Verifying Session...
+        </div>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '1rem' }}>
+          Initializing Faculty Flow 2.0 Security Layer...
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
-      {/* Header */}
-      <header className="app-header">
-        <div className="brand-badge">
-          <Sparkles size={14} /> Faculty Flow 2.0 Foundation
-        </div>
-        <h1 className="app-title">Academic Operations & Faculty Portal</h1>
-        <p className="app-subtitle">
-          Phase 1 Foundation established: Modular architecture powered by React, Vite, Express,
-          TypeScript, and MySQL.
-        </p>
-      </header>
+      {user ? (
+        /* Authenticated Application Shell */
+        <>
+          <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Architecture Highlights */}
-      <section className="arch-grid" aria-label="System Architecture Modules">
-        <div className="arch-card client">
-          <div className="arch-card-header">
-            <div className="arch-icon-wrap">
-              <Layers size={20} />
+          <main>
+            {activeTab === 'overview' && <RoleMatrixView />}
+            {activeTab === 'faculty' && <DepartmentFacultyView />}
+            {activeTab === 'users' && user.role === 'SYSTEM_ADMIN' && <UserManagementView />}
+            {activeTab === 'simulator' && <TaskPolicySimulator />}
+          </main>
+
+          <section style={{ marginTop: '3.5rem' }}>
+            <HealthCard />
+          </section>
+        </>
+      ) : (
+        /* Public / Unauthenticated Landing and Login View */
+        <>
+          <header className="app-header">
+            <div className="brand-badge">
+              <Sparkles size={14} /> Faculty Flow 2.0 • Phase 2 RBAC
             </div>
-            <h3>Client Application</h3>
-          </div>
-          <p>
-            React 19 + TypeScript bundled with Vite. Includes Vanilla CSS design system, responsive
-            layouts, and Vitest smoke tests.
-          </p>
-        </div>
+            <h1 className="app-title">Academic Operations & Faculty Portal</h1>
+            <p className="app-subtitle">
+              Role-Based Access Control and secure session management for System Administrators,
+              HODs, Professors, and Assistant Professors.
+            </p>
+          </header>
 
-        <div className="arch-card server">
-          <div className="arch-card-header">
-            <div className="arch-icon-wrap">
-              <Terminal size={20} />
+          {/* Architecture Highlights */}
+          <section className="arch-grid" aria-label="System Architecture Modules">
+            <div className="arch-card client">
+              <div className="arch-card-header">
+                <div className="arch-icon-wrap">
+                  <Layers size={20} />
+                </div>
+                <h3>Identity & RBAC Client</h3>
+              </div>
+              <p>
+                React 19 + TypeScript. Role-aware navigation, interactive policy simulator, and
+                credential management.
+              </p>
             </div>
-            <h3>Server Application</h3>
-          </div>
-          <p>
-            Node.js & Express with TypeScript. Strict environment validation, CORS policies,
-            centralized error management, and health endpoints.
-          </p>
-        </div>
 
-        <div className="arch-card db">
-          <div className="arch-card-header">
-            <div className="arch-icon-wrap">
-              <Database size={20} />
+            <div className="arch-card server">
+              <div className="arch-card-header">
+                <div className="arch-icon-wrap">
+                  <Terminal size={20} />
+                </div>
+                <h3>Express Security Engine</h3>
+              </div>
+              <p>
+                HttpOnly token management, login rate limiting, Zod validation, and strict
+                departmental scope enforcement.
+              </p>
             </div>
-            <h3>Database & Migrations</h3>
-          </div>
-          <p>
-            MySQL connection pooling with ping verification, transactional migration runner, and
-            baseline schema versioning.
-          </p>
-        </div>
-      </section>
 
-      {/* Main Health & Connectivity Check */}
-      <main>
-        <HealthCard />
-      </main>
+            <div className="arch-card db">
+              <div className="arch-card-header">
+                <div className="arch-icon-wrap">
+                  <Database size={20} />
+                </div>
+                <h3>MySQL Authorization Schema</h3>
+              </div>
+              <p>
+                Versioned relational schemas for departments, faculty profiles, token revocations,
+                and security audit trails.
+              </p>
+            </div>
+          </section>
 
-      {/* Phase 1 Verification Checklist */}
+          {/* Login Form */}
+          <section style={{ marginBottom: '3rem' }}>
+            <LoginForm />
+          </section>
+
+          {/* System Health Check Card */}
+          <main>
+            <HealthCard />
+          </main>
+        </>
+      )}
+
+      {/* Footer */}
       <footer style={{ marginTop: '3.5rem', textAlign: 'center' }}>
         <div
           style={{
@@ -77,10 +125,18 @@ export const App: React.FC = () => {
           }}
         >
           <ShieldCheck size={16} color="var(--accent-emerald)" />
-          <span>Foundation Stage Verified • Ready for Module Development</span>
+          <span>Faculty Flow 2.0 • Phase 2 Authentication & Authorization Active</span>
         </div>
       </footer>
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <MainAppContent />
+    </AuthProvider>
   );
 };
 

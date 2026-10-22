@@ -1,23 +1,27 @@
 # Faculty Flow 2.0
 
-> Modern Academic Operations & Faculty Management System — Foundation Layer (Phase 1)
+> Modern Academic Operations & Faculty Management System
+> **Phase 1: Foundation Layer** & **Phase 2: Database, Authentication and Role-Based Access Control (RBAC)**
 
-Faculty Flow 2.0 is an enterprise-grade academic operations platform designed for higher education institutions. This repository contains the project foundation, establishing a modular, decoupled full-stack architecture with React (Vite + TypeScript), Node.js (Express + TypeScript), and MySQL.
+Faculty Flow 2.0 is an enterprise-grade academic operations platform designed for higher education institutions. This repository features a modular, decoupled full-stack architecture built with React 19 (Vite + TypeScript), Node.js (Express + TypeScript), and MySQL.
 
 ---
 
 ## 🏗️ Architecture Overview
 
-The codebase is organized into a modular monorepo workspace:
+The codebase is organized as an npm workspaces monorepo:
 
 ```text
 faculty_flow/
-├── client/                     # Frontend Application
+├── client/                     # Frontend Application (React 19 + Vite + TypeScript)
 │   ├── src/
-│   │   ├── components/         # Reusable UI components (HealthCard, etc.)
-│   │   ├── test/               # Vitest + RTL frontend test suites
-│   │   ├── App.tsx             # Root layout and architectural overview
-│   │   ├── index.css           # Vanilla CSS tokens & design system
+│   │   ├── components/         # UI components (LoginForm, Navbar, RoleMatrixView, HealthCard, etc.)
+│   │   ├── context/            # AuthContext & useAuth session hook
+│   │   ├── test/               # Vitest + React Testing Library suites
+│   │   ├── types/              # Client auth and department type definitions
+│   │   ├── App.tsx             # Root authenticated shell and public landing
+│   │   ├── App.css             # Vanilla CSS layout and component styling
+│   │   ├── index.css           # Design tokens, color system, and resets
 │   │   └── main.tsx            # Application entry point
 │   ├── .env.example            # Client environment template
 │   ├── index.html              # HTML shell with typography and SEO metadata
@@ -25,169 +29,210 @@ faculty_flow/
 │   ├── tsconfig.json           # Client TypeScript configuration
 │   └── vite.config.ts          # Vite build, proxy, and test config
 │
-├── server/                     # Backend API Application
+├── server/                     # Backend API Application (Node.js + Express + TypeScript)
 │   ├── src/
-│   │   ├── config/             # Environment validation (Zod) & MySQL pool
-│   │   ├── controllers/        # Express route controllers (Health, etc.)
-│   │   ├── db/                 # Migration runner and SQL schemas
-│   │   ├── middleware/         # Centralized error handler & 404 handler
-│   │   ├── routes/             # Modular API router definitions
-│   │   ├── app.ts              # Express application factory
-│   │   └── index.ts            # Server bootstrap and graceful shutdown
+│   │   ├── config/             # Zod environment validation & MySQL connection pool
+│   │   ├── constants/          # Centralized Role definitions and RBAC policy matrix
+│   │   ├── controllers/        # Auth, User, Department, TaskPolicy, Health controllers
+│   │   ├── db/                 # Transactional migration runner, seed script, SQL files
+│   │   │   ├── migrations/
+│   │   │   │   ├── 001_initial_schema.sql  # Schema migration tracker & system metadata
+│   │   │   │   └── 002_auth_and_rbac.sql   # Departments, Users, Tokens, Audit Logs
+│   │   │   ├── migrate.ts                  # Migration runner
+│   │   │   └── seed.ts                     # Safe development database seeder
+│   │   ├── middleware/         # Auth verification, RBAC guards, rate limiter, error handlers
+│   │   ├── routes/             # Modular routers (/health, /auth, /users, /departments, /tasks)
+│   │   ├── services/           # JWT & DB-backed refresh token service, audit logging
+│   │   ├── types/              # Server-side user, token, and Express typing extensions
+│   │   ├── validators/         # Zod schemas for input validation
+│   │   ├── app.ts              # Express application factory & middleware chain
+│   │   └── index.ts            # Server entry point with DB check & graceful shutdown
 │   ├── test/                   # Vitest + Supertest backend test suites
+│   │   ├── auth.test.ts        # Authentication, password hashing, and cookie tests
+│   │   ├── rbac.test.ts        # Role permissions, department isolation, and matrix tests
+│   │   └── health.test.ts      # Phase 1 health check smoke tests
 │   ├── .env.example            # Server environment template
 │   ├── package.json            # Server dependencies and scripts
 │   └── tsconfig.json           # Server TypeScript configuration
 │
 ├── .env.example                # Root environment template
-├── .gitignore                  # Comprehensive gitignore rules
+├── .gitignore                  # Strict Git rules preventing secret and artifact leaks
 ├── package.json                # Root workspaces orchestrator
-└── README.md                   # System documentation and runbook
+└── README.md                   # System documentation and operational runbook
 ```
 
 ---
 
-## 📋 Prerequisites
+## 🔐 Authentication & Security Design
 
-Before running the project, ensure you have the following installed on your machine:
-
-- **Node.js**: `v20.x` or higher (tested with Node `v26.x`)
-- **npm**: `v10.x` or higher (or equivalent package manager)
-- **MySQL**: `v8.0` or higher (optional for basic frontend/backend smoke testing, required for DB operations)
-- **Git**
+### Authentication Approach
+- **Access Tokens**: Short-lived JSON Web Tokens (15-minute expiration) containing `{ userId, email, role, departmentId }`.
+- **Refresh Tokens**: Cryptographically random 40-byte tokens stored as SHA-256 hashes in the MySQL `refresh_tokens` table (7-day expiration).
+- **Transport Security**: Stored in `HttpOnly`, `SameSite=Lax` cookies (and optionally via `Authorization: Bearer` headers for API clients), preventing XSS token exfiltration.
+- **Token Rotation & Invalidation**: Refresh tokens rotate on every use. Revoked tokens are immediately flagged, and token reuse triggers user-wide session invalidation. Logging out explicitly revokes tokens and clears cookies.
+- **Password Security**: Passwords hashed using `bcryptjs` with 12 salt rounds. Raw passwords and password hashes are never returned in any API response.
+- **Brute-Force Protection**: Sliding-window rate limiting on `/api/auth/login` (5 failed attempts per IP/email locks authentication for 15 minutes).
+- **Audit Logging**: Sensitive actions (`USER_LOGIN`, `USER_LOGOUT`, `USER_CREATED`, `PASSWORD_CHANGED`, `DEPARTMENT_CREATED`) are logged in the `audit_logs` table.
 
 ---
 
-## 🚀 Installation
+## 🏛️ Roles & Authority Matrix
 
-Install all dependencies across both `client` and `server` workspaces in a single command from the project root:
+| Role | Scope | Key Capabilities | Permitted Task Categories |
+| :--- | :--- | :--- | :--- |
+| **System Admin** | Global / Infrastructure | User account creation, role assignment, department administration. | None (cannot allocate academic tasks; distinct administrative role). |
+| **Head of Department (HOD)** | Department Scope | Highest departmental authority. Manages faculty records within their department. | **All 5 categories**: Teaching, Research, Grading, Meetings, Administrative. |
+| **Professor** | Department Scope | Can allocate work to eligible Assistant Professors in the same department. | **4 categories**: Teaching, Research, Grading, Meetings (Administrative prohibited). |
+| **Assistant Professor** | Department Scope | Primarily executes assigned work. Cannot delegate by default. | **3 categories**: Teaching, Research, Grading (only when `can_assign_work` is enabled). |
 
+### Security Guarantees:
+1. **Department Isolation**: Departmental faculty (HOD, Professor, Assistant Professor) can only view and manage faculty within their assigned department. Cross-department requests are rejected with `403 Forbidden`.
+2. **Privilege Escalation Defense**: Non-admin self-update endpoints (`PATCH /api/users/:id`) strictly prohibit modifying `role`, `department_id`, `can_assign_work`, or `is_active`. Attempts are rejected with `403 Forbidden`.
+3. **Server-Side Enforcement**: The frontend adapts navigation for usability, but every permission, role check, and department boundary is independently verified by backend middleware.
+
+---
+
+## 🗄️ Database Schema & Migrations
+
+### Tables
+
+1. **`departments`**:
+   - `id` (INT PK AI), `code` (VARCHAR(20) UNIQUE), `name` (VARCHAR(150) UNIQUE), `description` (TEXT), `created_at`, `updated_at`.
+2. **`users`**:
+   - `id` (INT PK AI), `email` (VARCHAR(255) UNIQUE), `password_hash` (VARCHAR(255)), `full_name` (VARCHAR(150)), `role` (ENUM), `department_id` (FK -> `departments.id` ON DELETE RESTRICT), `can_assign_work` (BOOLEAN DEFAULT FALSE), `is_active` (BOOLEAN DEFAULT TRUE), `created_at`, `updated_at`.
+3. **`refresh_tokens`**:
+   - `id` (INT PK AI), `user_id` (FK -> `users.id` ON DELETE CASCADE), `token_hash` (VARCHAR(64) UNIQUE), `expires_at`, `revoked_at`, `ip_address`, `user_agent`, `created_at`.
+4. **`audit_logs`**:
+   - `id` (INT PK AI), `actor_id` (FK -> `users.id` ON DELETE SET NULL), `action` (VARCHAR(100)), `target_type` (VARCHAR(50)), `target_id` (INT), `details` (JSON), `ip_address`, `created_at`.
+5. **`schema_migrations`**:
+   - Tracks executed migration files in sequence with transaction rollback safety.
+
+### Migration Commands
 ```bash
-npm install
-```
-
-> **Note for Windows PowerShell Users:** If PowerShell script execution policies block `npm`, run commands using `npm.cmd` (e.g., `npm.cmd install`).
-
----
-
-## ⚙️ Environment Configuration
-
-1. Copy the root environment template or the respective templates in `client/` and `server/`:
-
-```bash
-# Server configuration
-cp server/.env.example server/.env
-
-# Client configuration
-cp client/.env.example client/.env
-```
-
-2. Review and adjust environment values:
-
-### Server Variables (`server/.env`)
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `PORT` | `5000` | Port on which the Express server listens |
-| `NODE_ENV` | `development` | Runtime environment (`development`, `production`, `test`) |
-| `CLIENT_URL` | `http://localhost:5173` | Allowed frontend origin for CORS |
-| `DB_HOST` | `localhost` | MySQL host address |
-| `DB_PORT` | `3306` | MySQL port |
-| `DB_USER` | `root` | MySQL database user |
-| `DB_PASSWORD` | *(empty)* | MySQL database password |
-| `DB_NAME` | `faculty_flow_db` | MySQL database name |
-| `DB_CONNECTION_LIMIT`| `10` | Max simultaneous connections in pool |
-
-### Client Variables (`client/.env`)
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `VITE_API_URL` | `http://localhost:5000/api` | Base URL for API calls |
-
----
-
-## 🗄️ Database Setup & Migrations
-
-### 1. Create the Database
-Connect to your local MySQL instance and create the database:
-
-```sql
-CREATE DATABASE IF NOT EXISTS faculty_flow_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-### 2. Run Database Migrations
-Execute the automated transactional migration runner:
-
-```bash
-# From the project root:
+# Run pending migrations
 npm run db:migrate
 
-# Or specifically inside the server workspace:
-npm run db:migrate --workspace=server
+# Seed development departments and test accounts
+npm run db:seed
 ```
 
-This creates the `schema_migrations` tracking table and applies baseline tables (e.g., `system_info`).
+> **Migration Limitations**: Migrations apply forward additively. Downward rollbacks must be planned via compensating forward migrations to preserve relational integrity and avoid data loss.
 
 ---
 
-## 💻 Development Commands
+## 🔌 API Endpoints Summary
 
-| Command | Description |
-| :--- | :--- |
-| `npm run dev` | Starts **both** Express backend and Vite frontend concurrently |
-| `npm run dev:server` | Starts the Express server in watch mode using `tsx` |
-| `npm run dev:client` | Starts the Vite development server with Hot Module Replacement (HMR) |
-| `npm run build` | Compiles both TypeScript server and Vite frontend production bundles |
-| `npm run build:server` | Compiles the server TypeScript to `server/dist/` |
-| `npm run build:client` | Compiles the client React app to `client/dist/` |
+### Authentication (`/api/auth`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/login` | Public | Authenticates credentials, sets HttpOnly cookies, returns user & tokens. |
+| `POST` | `/api/auth/logout` | Public/Auth | Revokes refresh token in database and clears session cookies. |
+| `POST` | `/api/auth/refresh` | Public/Cookie | Rotates and issues a new access token using a valid refresh token. |
+| `GET` | `/api/auth/me` | Authenticated | Returns currently authenticated user profile and department details. |
+| `POST` | `/api/auth/change-password` | Authenticated | Validates current password, updates hash, and revokes all active sessions. |
 
-When running `npm run dev`:
-- **Frontend**: Accessible at `http://localhost:5173`
-- **Backend API**: Accessible at `http://localhost:5000`
-- **Health Check Endpoint**: `http://localhost:5000/api/health`
+### Users (`/api/users`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/users` | Authenticated | Lists users (System Admin: all; Faculty: scoped to their department). |
+| `POST` | `/api/users` | System Admin | Creates a user account with assigned role and department. |
+| `GET` | `/api/users/:id` | Authenticated | Gets user by ID (scoped to same department for non-admins). |
+| `PATCH` | `/api/users/:id` | Admin / Self | Admin updates any field; Self can only update `fullName`. |
+
+### Departments (`/api/departments`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/departments` | Authenticated | Lists all academic departments with faculty counts. |
+| `POST` | `/api/departments` | System Admin | Creates a new academic department. |
+| `GET` | `/api/departments/:id` | Authenticated | Returns department details. |
+| `GET` | `/api/departments/:id/faculty` | Scoped | Lists faculty in department (Admin or members of that department). |
+
+### Task Policy Engine (`/api/tasks`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/tasks/evaluate-allocation` | Authenticated | Evaluates if actor can allocate a category to a target faculty member. |
+
+### Health Checks (`/health`, `/api/health`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/health` | Public | System uptime, environment, and MySQL database connection status. |
 
 ---
 
-## 🧪 Verification & Testing Commands
+## ⚙️ Environment Variables
 
-To verify project integrity, smoke tests and type checks can be executed:
+Copy `.env.example` to `.env` or configure `server/.env`:
+
+```env
+# Server Configuration
+PORT=5000
+NODE_ENV=development
+CLIENT_URL=http://localhost:5173
+
+# MySQL Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_secure_password_here
+DB_NAME=faculty_flow_db
+DB_CONNECTION_LIMIT=10
+
+# Authentication & Security
+JWT_SECRET=your_super_secret_jwt_key_here
+JWT_EXPIRES_IN=15m
+REFRESH_TOKEN_EXPIRES_IN=7d
+COOKIE_SECRET=your_cookie_encryption_secret_here
+
+# Frontend Configuration (client/.env)
+VITE_API_URL=http://localhost:5000/api
+```
+
+---
+
+## 🧪 Development & Verification Commands
 
 ```bash
-# Run all automated tests (client + server)
+# Install dependencies across all workspaces
+npm install
+
+# Run database migrations
+npm run db:migrate
+
+# Seed development test accounts (password for all: Password@12345)
+npm run db:seed
+
+# Run all automated tests (29 tests total: 26 server, 3 client)
 npm run test
 
-# Run backend smoke tests (Supertest + Vitest)
+# Run backend test suites (Supertest + Vitest)
 npm run test:server
 
-# Run frontend smoke tests (React Testing Library + Vitest)
+# Run frontend test suites (React Testing Library + Vitest)
 npm run test:client
 
-# Run strict TypeScript validation across the entire project
+# TypeScript strict type checking
 npm run typecheck
+
+# Build production bundles
+npm run build
+
+# Start both backend and frontend concurrently
+npm run dev
 ```
 
 ---
 
-## 🛡️ API Health Check Endpoint
+## 👤 Development Test Accounts
 
-`GET /api/health` (also accessible at `/health`)
+When `npm run db:seed` is executed, the following baseline test accounts are provisioned (default password: `Password@12345`):
 
-### Response Example:
-```json
-{
-  "status": "ok",
-  "service": "Faculty Flow 2.0 API",
-  "timestamp": "2026-10-22T05:15:00.000Z",
-  "uptime": 12.4,
-  "environment": "development",
-  "database": {
-    "status": "connected",
-    "message": "Database connection successful"
-  }
-}
-```
-
-If the database is offline or unreachable, the endpoint returns HTTP 200 with `status: "degraded"` and diagnostic details in the `database` object, ensuring system resilience and seamless frontend status reporting.
-
----
-
-## 📌 Phase 1 Scope Boundary
-This phase establishes the structural, infrastructural, and continuous-verification foundations of Faculty Flow 2.0. Business features (authentication, role-based access, faculty leave workflows, task scheduling, calendars) are scheduled for Phase 2 onward.
+| Email | Role | Department | Delegation Privilege |
+| :--- | :--- | :--- | :--- |
+| `admin@facultyflow.local` | `SYSTEM_ADMIN` | Global | False |
+| `hod.cs@facultyflow.local` | `HOD` | Computer Science (`CS`) | True (All 5 Categories) |
+| `prof.cs@facultyflow.local` | `PROFESSOR` | Computer Science (`CS`) | True (4 Categories) |
+| `asst.cs@facultyflow.local` | `ASSISTANT_PROFESSOR` | Computer Science (`CS`) | False (Denied by default) |
+| `asst.lead.cs@facultyflow.local` | `ASSISTANT_PROFESSOR` | Computer Science (`CS`) | True (3 Categories) |
+| `hod.mech@facultyflow.local` | `HOD` | Mechanical Eng (`MECH`) | True (All 5 Categories) |
+| `prof.mech@facultyflow.local` | `PROFESSOR` | Mechanical Eng (`MECH`) | True (4 Categories) |
+| `inactive@facultyflow.local` | `ASSISTANT_PROFESSOR` | Computer Science (`CS`) | Inactive / Disabled |

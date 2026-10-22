@@ -1,5 +1,6 @@
 import express, { Express } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { env } from './config/env.js';
 import { apiRouter } from './routes/index.js';
 import { healthRouter } from './routes/health.routes.js';
@@ -18,6 +19,9 @@ export function createApp(): Express {
       allowedHeaders: ['Content-Type', 'Authorization'],
     })
   );
+
+  // Cookie parser
+  app.use(cookieParser(env.COOKIE_SECRET));
 
   // Body parsers
   app.use(express.json());
