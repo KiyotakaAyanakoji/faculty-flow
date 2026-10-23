@@ -9,6 +9,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('faculty_flow_theme');
+          var isDark = stored === 'dark';
+          if (!stored || stored === 'system') {
+            isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          }
+          document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

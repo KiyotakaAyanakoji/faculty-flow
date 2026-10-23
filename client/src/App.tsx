@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { ThemeToggle } from './components/ThemeToggle';
 import { LoginForm } from './components/LoginForm';
 import { Navbar } from './components/Navbar';
 import { DepartmentFacultyView } from './components/DepartmentFacultyView';
@@ -59,6 +61,9 @@ const MainAppContent: React.FC = () => {
         /* Public / Unauthenticated Landing and Login View */
         <>
           <header className="app-header">
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+              <ThemeToggle />
+            </div>
             <div className="brand-badge">
               <Sparkles size={14} /> Faculty Flow 2.0 • Academic Operations
             </div>
@@ -144,9 +149,11 @@ const MainAppContent: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <MainAppContent />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <MainAppContent />
+      </AuthProvider>
+    </ThemeProvider>
   );
 };
 

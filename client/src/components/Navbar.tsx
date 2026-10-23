@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
+import { ThemeToggle } from './ThemeToggle';
 import {
   LogOut,
   Building,
@@ -170,6 +171,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             )}
           </div>
         </div>
+
+        <ThemeToggle />
 
         <button
           id="btn-nav-logout"
