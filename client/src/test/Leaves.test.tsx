@@ -436,9 +436,9 @@ describe('Phase 6 Frontend Tests - Leave Management', () => {
 
     // Open Apply for Leave Modal
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /apply for leave/i })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /apply for leave/i }).length).toBeGreaterThan(0);
     });
-    fireEvent.click(screen.getByRole('button', { name: /apply for leave/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /apply for leave/i })[0]);
 
     // Verify modal is open
     await waitFor(() => {
@@ -499,14 +499,14 @@ describe('Phase 6 Frontend Tests - Leave Management', () => {
 
     // Apply for Leave button MUST be present for Assistant Professor
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /apply for leave/i })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /apply for leave/i }).length).toBeGreaterThan(0);
     });
 
     // Approval Queue tab MUST be hidden for Assistant Professor
     expect(screen.queryByRole('button', { name: /approval queue/i })).not.toBeInTheDocument();
 
     // Clicking Apply for Leave opens the modal
-    fireEvent.click(screen.getByRole('button', { name: /apply for leave/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /apply for leave/i })[0]);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /apply for leave/i })).toBeInTheDocument();

@@ -435,8 +435,22 @@ export const LeaveManagementView: React.FC = () => {
               className="btn btn-primary"
               onClick={openApplyModal}
               title="Apply for institutional faculty leave"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                color: '#ffffff',
+                border: '1px solid rgba(99, 102, 241, 0.6)',
+                borderRadius: '8px',
+                padding: '0.65rem 1.35rem',
+                fontSize: '0.925rem',
+                fontWeight: 700,
+                boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)',
+                cursor: 'pointer',
+              }}
             >
-              <Plus size={16} />
+              <Plus size={18} />
               <span>Apply for Leave</span>
             </button>
           )}
@@ -466,9 +480,36 @@ export const LeaveManagementView: React.FC = () => {
 
       {/* 1. Leave Balance Cards */}
       <section style={{ marginBottom: '2rem' }}>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <TrendingUp size={16} /> Leave Balances (Academic Year 2026-2027)
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <TrendingUp size={16} /> Leave Balances (Academic Year 2026-2027)
+          </h3>
+          {canApplyForLeave && (
+            <button
+              id="btn-apply-leave-balances"
+              data-testid="apply-leave-balances-btn"
+              className="btn btn-primary btn-sm"
+              onClick={openApplyModal}
+              title="Apply for faculty leave"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                color: '#ffffff',
+                border: '1px solid rgba(99, 102, 241, 0.6)',
+                borderRadius: '8px',
+                padding: '0.45rem 1rem',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                boxShadow: '0 2px 10px rgba(99, 102, 241, 0.35)',
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={16} /> Apply for Leave
+            </button>
+          )}
+        </div>
 
         <div className="balance-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
           {balances.map(bal => {
@@ -604,21 +645,49 @@ export const LeaveManagementView: React.FC = () => {
         </div>
 
         {activeSubTab === 'my-leaves' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Filter Status:</span>
-            <select
-              id="select-status-filter"
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="form-control"
-              style={{ width: 'auto', padding: '0.3rem 0.75rem', fontSize: '0.85rem' }}
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Approved">Approved</option>
-              <option value="Rejected">Rejected</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Filter Status:</span>
+              <select
+                id="select-status-filter"
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="form-control"
+                style={{ width: 'auto', padding: '0.3rem 0.75rem', fontSize: '0.85rem' }}
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            {canApplyForLeave && (
+              <button
+                id="btn-apply-leave-history"
+                data-testid="apply-leave-history-btn"
+                className="btn btn-primary btn-sm"
+                onClick={openApplyModal}
+                title="Submit new leave request"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(99, 102, 241, 0.6)',
+                  borderRadius: '6px',
+                  padding: '0.4rem 0.95rem',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={15} /> Apply for Leave
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -638,12 +707,27 @@ export const LeaveManagementView: React.FC = () => {
               <p style={{ margin: 0, fontSize: '0.9rem' }}>You have not submitted any leave requests matching the current filter.</p>
               {canApplyForLeave && (
                 <button
+                  id="btn-apply-leave-empty"
                   className="btn btn-primary"
-                  style={{ marginTop: '1.25rem' }}
+                  style={{
+                    marginTop: '1.25rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(99, 102, 241, 0.6)',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.75rem',
+                    fontSize: '0.95rem',
+                    fontWeight: 700,
+                    boxShadow: '0 4px 18px rgba(99, 102, 241, 0.45)',
+                    cursor: 'pointer',
+                  }}
                   onClick={openApplyModal}
                   data-testid="apply-leave-empty-btn"
                 >
-                  <Plus size={16} /> Apply for Leave
+                  <Plus size={18} /> Apply for Leave
                 </button>
               )}
             </div>
