@@ -2,8 +2,16 @@ import bcrypt from 'bcryptjs';
 import { fileURLToPath } from 'url';
 import { pool, testDatabaseConnection } from '../config/database.js';
 import { ROLES } from '../constants/roles.js';
+import { env } from '../config/env.js';
 
 export async function seedDatabase(): Promise<void> {
+  if (env.NODE_ENV === 'production') {
+    throw new Error(
+      'Execution blocked: Development database seeding is strictly prohibited in production mode (NODE_ENV=production). ' +
+      'Production environments must provision real administrative accounts securely.'
+    );
+  }
+
   console.log('--- Starting Safe Development Seeding ---');
 
   const status = await testDatabaseConnection();

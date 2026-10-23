@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
+import { env } from '../config/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,9 +10,8 @@ const __dirname = path.dirname(__filename);
 const DEFAULT_UPLOAD_DIR = path.resolve(__dirname, '../../uploads/events');
 
 export function getEventUploadDir(): string {
-  return process.env.EVENT_UPLOAD_DIR
-    ? path.resolve(process.env.EVENT_UPLOAD_DIR)
-    : DEFAULT_UPLOAD_DIR;
+  const customDir = env.EVENT_UPLOAD_DIR || process.env.EVENT_UPLOAD_DIR;
+  return customDir ? path.resolve(customDir) : DEFAULT_UPLOAD_DIR;
 }
 
 export async function ensureUploadDirExists(): Promise<string> {

@@ -945,5 +945,40 @@ Phase 8 hardens system integration, concurrency, transactional integrity, notifi
 - **Build**: Clean pass (`vite build` client bundle + `tsc` server build).
 - **Production Dependencies**: 0 vulnerabilities (`npm audit --omit=dev`).
 
+---
+
+## Phase 9: Deployment Preparation, Production Configuration, and Operations
+
+Phase 9 establishes deployment readiness, startup environment validation, fresh database provisioning verification, production container definitions, and comprehensive operations documentation.
+
+### 1. Production Configuration & Startup Safeguards
+- **Environment Validation**: `server/src/config/env.ts` enforces high-entropy secrets in production (`NODE_ENV=production`). Defaults like `faculty_flow_default_dev_secret_change_in_production` fail fast on boot. Secrets must be at least 32 characters.
+- **Production Seeding Guard**: `server/src/db/seed.ts` strictly prohibits execution in production environments (`NODE_ENV=production`), preventing accidental insertion of development accounts.
+- **CORS Domain Lockdown**: In production, CORS origins are locked strictly to `env.CLIENT_URL`, disallowing `localhost` and `127.0.0.1`.
+- **Persistent Storage Configuration**: `EVENT_UPLOAD_DIR` environment variable allows configurable volume mounts for private event PDF storage.
+
+### 2. Database & Migration Provisioning Verification
+- **Clean Database Test (`server/test/migration.test.ts`)**:
+  - Automatically provisions disposable test database `faculty_flow_phase9_clean_test_db`.
+  - Confirms zero initial application tables.
+  - Applies migrations `001` through `008` in strict numerical order.
+  - Verifies all 16 application tables, schema constraints, foreign keys, and indexes.
+  - Re-runs the migration check on the applied database, confirming runner idempotency (0 reapplied).
+  - Verifies failure handling for invalid connection parameters.
+  - Cleans up the disposable database post-verification.
+
+### 3. Container & Deployment Manifests
+- **Multi-Stage `Dockerfile`**: Production build with Node.js 20 Alpine, multi-stage compilation, unprivileged non-root user (`node`), and built-in `/api/health` container healthcheck.
+- **`docker-compose.yml`**: Out-of-the-box staging/production service definitions for MySQL 8.0 and Faculty Flow application with persistent named volumes for data and private uploads.
+- **Comprehensive Guide (`DEPLOYMENT.md`)**: Full operational guide covering VM/systemd, reverse proxy (Nginx/Caddy), least-privilege MySQL provisioning, backups/disaster recovery, and credential rotation.
+
+### 4. Production Readiness Summary
+- **Test Suite**: 155 tests passed across 19 test suites (141 server tests in 12 suites, 14 client tests in 7 suites).
+- **Typecheck**: 0 errors across server and client workspaces.
+- **Production Build**: Clean pass for server (`tsc`) and client (`vite build`).
+- **Production Dependencies**: 0 vulnerabilities via `npm audit --omit=dev`.
+- **Dedicated Guide**: See [DEPLOYMENT.md](file:///c:/Users/bgaur/faculty_flow/DEPLOYMENT.md) for full deployment instructions and the production readiness checklist.
+
+
 
 

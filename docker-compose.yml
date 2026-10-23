@@ -1,0 +1,56 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: facultyflow-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secure_password_dev}
+      MYSQL_DATABASE: ${DB_NAME:-faculty_flow_db}
+      MYSQL_USER: ${DB_USER:-faculty_flow_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-faculty_flow_dev_password}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: facultyflow-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 5000
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5000}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-faculty_flow_app}
+      DB_PASSWORD: ${DB_PASSWORD:-faculty_flow_dev_password}
+      DB_NAME: ${DB_NAME:-faculty_flow_db}
+      JWT_SECRET: ${JWT_SECRET:-faculty_flow_production_jwt_secret_32_characters_minimum}
+      COOKIE_SECRET: ${COOKIE_SECRET:-faculty_flow_cookie_secret_32_characters_minimum}
+      EVENT_UPLOAD_DIR: /app/uploads/events
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Faculty Flow <noreply@facultyflow.local>}
+    volumes:
+      - event_uploads:/app/uploads/events
+
+volumes:
+  mysql_data:
+  event_uploads:

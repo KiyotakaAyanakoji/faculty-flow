@@ -21,6 +21,9 @@ const envSchema = z.object({
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
   COOKIE_SECRET: z.string().default('faculty_flow_cookie_secret_dev'),
 
+  // Phase 5 & 9: Persistent Storage Configuration
+  EVENT_UPLOAD_DIR: z.string().optional(),
+
   // Phase 7: Email Notifications & SMTP Configuration
   EMAIL_ENABLED: z
     .preprocess(val => {
@@ -45,15 +48,44 @@ const envSchema = z.object({
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   SMTP_FROM: z.string().default('Faculty Flow <noreply@facultyflow.local>'),
-}).refine(data => {
-  if (data.EMAIL_ENABLED) {
-    return data.SMTP_HOST.trim().length > 0;
-  }
-  return true;
-}, {
-  message: 'SMTP_HOST must be provided and non-empty when EMAIL_ENABLED is true',
-  path: ['SMTP_HOST'],
-});
+})
+  .refine(data => {
+    if (data.EMAIL_ENABLED) {
+      return data.SMTP_HOST.trim().length > 0;
+    }
+    return true;
+  }, {
+    message: 'SMTP_HOST must be provided and non-empty when EMAIL_ENABLED is true',
+    path: ['SMTP_HOST'],
+  })
+  .refine(data => {
+    if (data.NODE_ENV === 'production') {
+      if (
+        data.JWT_SECRET === 'faculty_flow_default_dev_secret_change_in_production' ||
+        data.JWT_SECRET.length < 32
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, {
+    message: 'In production (NODE_ENV=production), JWT_SECRET must be securely set and at least 32 characters long.',
+    path: ['JWT_SECRET'],
+  })
+  .refine(data => {
+    if (data.NODE_ENV === 'production') {
+      if (
+        data.COOKIE_SECRET === 'faculty_flow_cookie_secret_dev' ||
+        data.COOKIE_SECRET.length < 32
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, {
+    message: 'In production (NODE_ENV=production), COOKIE_SECRET must be securely set and at least 32 characters long.',
+    path: ['COOKIE_SECRET'],
+  });
 
 const parsedEnv = envSchema.safeParse(process.env);
 
