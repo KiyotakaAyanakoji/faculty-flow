@@ -18,7 +18,6 @@ import {
   RefreshCw,
   AlertCircle,
   TrendingUp,
-  Shield,
   Activity,
 } from 'lucide-react';
 
@@ -138,17 +137,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               </div>
               <div className="metric-number">{(data as AdminDashboardData).departments.length}</div>
               <div className="metric-subtext">Active academic departments</div>
-            </div>
-
-            <div className="metric-card">
-              <div className="metric-header">
-                <span className="metric-title">Security & Roles</span>
-                <div className="metric-icon-wrap" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
-                  <Shield size={20} />
-                </div>
-              </div>
-              <div className="metric-number">4 Roles</div>
-              <div className="metric-subtext">RBAC Matrix Active</div>
             </div>
           </div>
 
@@ -359,22 +347,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             <div className="dashboard-panel">
               <div className="panel-header">
                 <h4>
-                  <TrendingUp size={18} /> Category & Priority Overview
+                  <TrendingUp size={18} /> Priority Overview
                 </h4>
               </div>
               <div className="panel-body">
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <div className="section-small-title">By Category</div>
-                  <div className="breakdown-pills">
-                    {Object.entries((data as HodDashboardData).taskMetrics.byCategory).map(([cat, count]) => (
-                      <div key={cat} className="breakdown-pill">
-                        <span className="pill-label">{cat}</span>
-                        <span className="pill-count">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
                 <div>
                   <div className="section-small-title">By Priority</div>
                   <div className="breakdown-pills">
@@ -493,7 +469,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
                         <div>
                           <strong>{task.title}</strong>
                           <div className="task-subtext">
-                            <span className="category-tag">{task.category}</span>
                             <span className={`priority-tag ${task.priority.toLowerCase()}`}>{task.priority}</span>
                           </div>
                         </div>
@@ -615,7 +590,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
                         <div>
                           <strong>{task.title}</strong>
                           <div className="task-subtext">
-                            <span className="category-tag">{task.category}</span>
                             <span className={`priority-tag ${task.priority.toLowerCase()}`}>{task.priority}</span>
                           </div>
                         </div>

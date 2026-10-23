@@ -2,7 +2,6 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LogOut,
-  Shield,
   Building,
   UserCheck,
   CheckCircle,
@@ -65,7 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         </div>
         <div>
           <span className="nav-title">Faculty Flow 2.0</span>
-          <span className="nav-version">RBAC Active</span>
+          <span className="nav-version">v2.0 Active</span>
         </div>
       </div>
 
@@ -144,13 +143,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             <UserCheck size={16} /> User Management
           </button>
         )}
-
-        <button
-          className={`nav-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
-        >
-          <Shield size={16} /> RBAC Matrix
-        </button>
 
         <button
           className={`nav-tab-btn ${activeTab === 'simulator' ? 'active' : ''}`}

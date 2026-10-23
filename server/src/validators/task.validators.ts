@@ -24,9 +24,10 @@ export const createTaskSchema = z.object({
     .max(255, 'Title cannot exceed 255 characters')
     .trim(),
   description: z.string().trim().max(5000, 'Description cannot exceed 5000 characters').optional().nullable(),
-  category: z.enum(ALL_TASK_CATEGORIES as [TaskCategory, ...TaskCategory[]], {
-    required_error: 'Valid task category is required',
-  }),
+  category: z
+    .enum(ALL_TASK_CATEGORIES as [TaskCategory, ...TaskCategory[]])
+    .optional()
+    .default('Teaching'),
   priority: z.enum(ALL_TASK_PRIORITIES as [TaskPriority, ...TaskPriority[]]).default('Medium'),
   dueDate: z
     .string({ required_error: 'Due date is required' })

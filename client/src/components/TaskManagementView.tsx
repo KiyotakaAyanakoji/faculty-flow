@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Task, TaskCategory, TaskPriority, TaskStatus, TaskSummary, EligibleAssignee } from '../types/task';
+import { Task, TaskPriority, TaskStatus, TaskSummary, EligibleAssignee } from '../types/task';
 import {
   CheckSquare,
   Plus,
@@ -28,7 +28,6 @@ export const TaskManagementView: React.FC = () => {
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [priorityFilter, setPriorityFilter] = useState<string>('');
   const [viewFilter, setViewFilter] = useState<'all' | 'assigned_to_me' | 'created_by_me'>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -42,7 +41,6 @@ export const TaskManagementView: React.FC = () => {
   // Create Form State
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newCategory, setNewCategory] = useState<TaskCategory>('Teaching');
   const [newPriority, setNewPriority] = useState<TaskPriority>('Medium');
   const [newDueDate, setNewDueDate] = useState('');
   const [newAssigneeId, setNewAssigneeId] = useState<string>('');
@@ -54,21 +52,11 @@ export const TaskManagementView: React.FC = () => {
   const [reassignCandidateId, setReassignCandidateId] = useState<string>('');
   const [reassignCandidates, setReassignCandidates] = useState<EligibleAssignee[]>([]);
 
-  // Check if current actor can allocate tasks
+  // Check if current actor can allocate tasks based on role hierarchy
   const canAllocate =
     user?.role === 'HOD' ||
     user?.role === 'PROFESSOR' ||
     (user?.role === 'ASSISTANT_PROFESSOR' && user.canAssignWork);
-
-  // Determine permitted categories for current actor
-  const permittedCategories: TaskCategory[] =
-    user?.role === 'HOD'
-      ? ['Teaching', 'Research', 'Grading', 'Meetings', 'Administrative']
-      : user?.role === 'PROFESSOR'
-      ? ['Teaching', 'Research', 'Grading', 'Meetings']
-      : user?.role === 'ASSISTANT_PROFESSOR' && user.canAssignWork
-      ? ['Teaching', 'Research', 'Grading']
-      : [];
 
   const fetchTasksAndSummary = useCallback(async () => {
     if (!user?.departmentId) return;
@@ -78,7 +66,6 @@ export const TaskManagementView: React.FC = () => {
     try {
       const queryParams = new URLSearchParams();
       if (statusFilter) queryParams.append('status', statusFilter);
-      if (categoryFilter) queryParams.append('category', categoryFilter);
       if (priorityFilter) queryParams.append('priority', priorityFilter);
       if (viewFilter) queryParams.append('view', viewFilter);
       if (searchTerm) queryParams.append('search', searchTerm);
@@ -102,13 +89,13 @@ export const TaskManagementView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.departmentId, statusFilter, categoryFilter, priorityFilter, viewFilter, searchTerm]);
+  }, [user?.departmentId, statusFilter, priorityFilter, viewFilter, searchTerm]);
 
   useEffect(() => {
     fetchTasksAndSummary();
   }, [fetchTasksAndSummary]);
 
-  // Fetch eligible assignees when category changes in create modal
+  // Fetch eligible assignees when create modal opens
   useEffect(() => {
     if (!showCreateModal || !user?.departmentId) return;
 
@@ -116,7 +103,7 @@ export const TaskManagementView: React.FC = () => {
     async function loadAssignees() {
       setLoadingAssignees(true);
       try {
-        const res = await fetch(`/api/tasks/eligible-assignees?category=${newCategory}`, {
+        const res = await fetch('/api/tasks/eligible-assignees', {
           credentials: 'include',
         });
         const data = await res.json();
@@ -147,7 +134,7 @@ export const TaskManagementView: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [showCreateModal, newCategory, user?.departmentId]);
+  }, [showCreateModal, user?.departmentId]);
 
   // Handle task creation
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -166,7 +153,6 @@ export const TaskManagementView: React.FC = () => {
         body: JSON.stringify({
           title: newTitle,
           description: newDescription || undefined,
-          category: newCategory,
           priority: newPriority,
           dueDate: newDueDate,
           assigneeId: Number(newAssigneeId),
@@ -351,9 +337,6 @@ export const TaskManagementView: React.FC = () => {
               className="submit-btn"
               onClick={() => {
                 setShowCreateModal(true);
-                if (permittedCategories.length > 0) {
-                  setNewCategory(permittedCategories[0]);
-                }
               }}
             >
               <Plus size={16} />
@@ -436,15 +419,6 @@ export const TaskManagementView: React.FC = () => {
             <option value="Completed">Completed</option>
           </select>
 
-          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-            <option value="">Category: All</option>
-            <option value="Teaching">Teaching</option>
-            <option value="Research">Research</option>
-            <option value="Grading">Grading</option>
-            <option value="Meetings">Meetings</option>
-            <option value="Administrative">Administrative</option>
-          </select>
-
           <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
             <option value="">Priority: All</option>
             <option value="Low">Low</option>
@@ -481,7 +455,6 @@ export const TaskManagementView: React.FC = () => {
                     <span className={`priority-pill ${task.priority.toLowerCase()}`}>
                       {task.priority} Priority
                     </span>
-                    <span className="category-pill">{task.category}</span>
                   </div>
 
                   <span className={`status-badge ${task.status.toLowerCase().replace(' ', '-')}`}>
@@ -621,36 +594,18 @@ export const TaskManagementView: React.FC = () => {
                 />
               </div>
 
-              <div className="modal-grid-fields">
-                <div className="form-field">
-                  <label htmlFor="task-category-select">Category *</label>
-                  <select
-                    id="task-category-select"
-                    value={newCategory}
-                    onChange={e => setNewCategory(e.target.value as TaskCategory)}
-                    disabled={submittingTask}
-                  >
-                    {permittedCategories.map(cat => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="task-priority-select">Priority</label>
-                  <select
-                    id="task-priority-select"
-                    value={newPriority}
-                    onChange={e => setNewPriority(e.target.value as TaskPriority)}
-                    disabled={submittingTask}
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                  </select>
-                </div>
+              <div className="form-field">
+                <label htmlFor="task-priority-select">Priority</label>
+                <select
+                  id="task-priority-select"
+                  value={newPriority}
+                  onChange={e => setNewPriority(e.target.value as TaskPriority)}
+                  disabled={submittingTask}
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
               </div>
 
               <div className="modal-grid-fields">
@@ -671,7 +626,7 @@ export const TaskManagementView: React.FC = () => {
                   {loadingAssignees ? (
                     <span className="form-note">Checking eligible faculty...</span>
                   ) : eligibleAssignees.length === 0 ? (
-                    <span className="form-note error">No eligible faculty for this category.</span>
+                    <span className="form-note error">No eligible faculty found for assignment.</span>
                   ) : (
                     <select
                       id="task-assignee-select"
@@ -727,10 +682,6 @@ export const TaskManagementView: React.FC = () => {
             <h3 className="detail-title">{selectedTask.title}</h3>
 
             <div className="detail-meta-grid">
-              <div>
-                <span className="meta-label">Category:</span>
-                <span className="meta-val">{selectedTask.category}</span>
-              </div>
               <div>
                 <span className="meta-label">Status:</span>
                 <span className={`status-badge ${selectedTask.status.toLowerCase().replace(' ', '-')}`}>

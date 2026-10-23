@@ -8,7 +8,7 @@ export interface Task {
   id: number;
   title: string;
   description: string | null;
-  category: TaskCategory;
+  category?: TaskCategory;
   priority: TaskPriority;
   status: TaskStatus;
   dueDate: string; // YYYY-MM-DD
@@ -40,7 +40,7 @@ export interface TaskSummary {
   inProgress: number;
   completed: number;
   overdue: number;
-  categoryBreakdown: Record<TaskCategory, number>;
+  categoryBreakdown?: Record<string, number>;
 }
 
 export interface EligibleAssignee {

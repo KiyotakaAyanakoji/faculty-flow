@@ -185,7 +185,7 @@ export function canAllocateTaskCategory(
 export function canAllocateToTargetFaculty(
   actor: { role: Role; departmentId: number | null; canAssignWork: boolean },
   target: { role: Role; departmentId: number | null },
-  category: TaskCategory
+  category?: TaskCategory
 ): { allowed: boolean; reason?: string } {
   // 1. System Admin check
   if (actor.role === ROLES.SYSTEM_ADMIN) {
@@ -211,21 +211,10 @@ export function canAllocateToTargetFaculty(
     };
   }
 
-  // 4. Category permission check
-  if (!canAllocateTaskCategory(actor.role, actor.canAssignWork, category)) {
-    return {
-      allowed: false,
-      reason: `Role '${actor.role}' is not authorized to allocate '${category}' tasks.`,
-    };
-  }
-
   // 4. Role hierarchy check
   if (actor.role === ROLES.HOD) {
     // HOD can allocate to any departmental faculty (Professors, Assistant Professors, or self)
-    return { allowed: true };
-  }
-
-  if (actor.role === ROLES.PROFESSOR) {
+  } else if (actor.role === ROLES.PROFESSOR) {
     // Professor can allocate permitted work to eligible Assistant Professors in the same department
     if (target.role !== ROLES.ASSISTANT_PROFESSOR && target.role !== ROLES.PROFESSOR) {
       return {
@@ -233,24 +222,24 @@ export function canAllocateToTargetFaculty(
         reason: 'Professors can only allocate work to Assistant Professors or peers.',
       };
     }
-    return { allowed: true };
-  }
-
-  if (actor.role === ROLES.ASSISTANT_PROFESSOR) {
-    if (!actor.canAssignWork) {
-      return {
-        allowed: false,
-        reason: 'Assignment permissions are denied by default for Assistant Professors.',
-      };
-    }
+  } else if (actor.role === ROLES.ASSISTANT_PROFESSOR) {
     if (target.role !== ROLES.ASSISTANT_PROFESSOR) {
       return {
         allowed: false,
         reason: 'Authorized Assistant Professors can only delegate to fellow Assistant Professors.',
       };
     }
-    return { allowed: true };
+  } else {
+    return { allowed: false, reason: 'Unauthorized allocation attempt.' };
   }
 
-  return { allowed: false, reason: 'Unauthorized allocation attempt.' };
+  // 5. Category permission check (if explicitly provided for backward compatibility)
+  if (category && !canAllocateTaskCategory(actor.role, actor.canAssignWork, category)) {
+    return {
+      allowed: false,
+      reason: `Role '${actor.role}' is not authorized to allocate '${category}' tasks.`,
+    };
+  }
+
+  return { allowed: true };
 }

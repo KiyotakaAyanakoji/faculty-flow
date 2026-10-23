@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { UserProfile, TaskCategory } from '../types/auth';
+import { UserProfile } from '../types/auth';
 import { CheckCircle2, XCircle, Send } from 'lucide-react';
 
 export const TaskPolicySimulator: React.FC = () => {
   const { user } = useAuth();
   const [facultyList, setFacultyList] = useState<UserProfile[]>([]);
   const [targetUserId, setTargetUserId] = useState<string>('');
-  const [category, setCategory] = useState<TaskCategory>('Teaching');
   const [evaluating, setEvaluating] = useState<boolean>(false);
   const [result, setResult] = useState<{ allowed: boolean; reason?: string; context?: any } | null>(null);
 
@@ -40,7 +39,6 @@ export const TaskPolicySimulator: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           targetUserId: Number(targetUserId),
-          category,
         }),
       });
 
@@ -90,21 +88,6 @@ export const TaskPolicySimulator: React.FC = () => {
                   {f.fullName} ({f.role} - {f.departmentCode || 'Admin'})
                 </option>
               ))}
-            </select>
-          </div>
-
-          <div className="sim-field">
-            <label>Select Task Category to Allocate</label>
-            <select
-              value={category}
-              onChange={e => setCategory(e.target.value as TaskCategory)}
-              disabled={evaluating}
-            >
-              <option value="Teaching">Teaching</option>
-              <option value="Research">Research</option>
-              <option value="Grading">Grading</option>
-              <option value="Meetings">Meetings</option>
-              <option value="Administrative">Administrative</option>
             </select>
           </div>
 

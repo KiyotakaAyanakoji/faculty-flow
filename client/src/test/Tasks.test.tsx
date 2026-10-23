@@ -232,6 +232,8 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
       expect(screen.getByText('Assign New Departmental Task')).toBeInTheDocument();
       expect(screen.getByLabelText(/Task Title/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/Assignee/i)).toBeInTheDocument();
+      // Verify Category selector is absent
+      expect(screen.queryByLabelText(/Category/i)).not.toBeInTheDocument();
     });
 
     // Verify eligible assignee from API is present in dropdown
@@ -239,4 +241,35 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
       expect(screen.getByRole('option', { name: /Miles Dyson/i })).toBeInTheDocument();
     });
   });
+
+  it('Batch 1: Category filter and category badges are removed from Task view', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Tasks/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Tasks/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Operating Systems Lab Grading')).toBeInTheDocument();
+    });
+
+    // Verify obsolete Category dropdown option does NOT exist
+    expect(screen.queryByText('Category: All')).not.toBeInTheDocument();
+    expect(screen.queryByText('RBAC Matrix')).not.toBeInTheDocument();
+  });
 });
+

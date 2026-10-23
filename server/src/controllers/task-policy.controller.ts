@@ -46,7 +46,7 @@ export async function evaluateTaskAllocation(req: Request, res: Response, next: 
         role: target.role,
         departmentId: target.department_id,
       },
-      category as TaskCategory
+      category ? (category as TaskCategory) : undefined
     );
 
     res.status(200).json({

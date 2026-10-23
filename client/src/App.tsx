@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginForm } from './components/LoginForm';
 import { Navbar } from './components/Navbar';
-import { RoleMatrixView } from './components/RoleMatrixView';
 import { DepartmentFacultyView } from './components/DepartmentFacultyView';
 import { UserManagementView } from './components/UserManagementView';
 import { TaskPolicySimulator } from './components/TaskPolicySimulator';
@@ -49,7 +48,6 @@ const MainAppContent: React.FC = () => {
             {activeTab === 'leaves' && <LeaveManagementView />}
             {activeTab === 'faculty' && <DepartmentFacultyView />}
             {activeTab === 'users' && user.role === 'SYSTEM_ADMIN' && <UserManagementView />}
-            {activeTab === 'overview' && <RoleMatrixView />}
             {activeTab === 'simulator' && <TaskPolicySimulator />}
           </main>
 
@@ -62,7 +60,7 @@ const MainAppContent: React.FC = () => {
         <>
           <header className="app-header">
             <div className="brand-badge">
-              <Sparkles size={14} /> Faculty Flow 2.0 • Phase 2 RBAC
+              <Sparkles size={14} /> Faculty Flow 2.0 • Academic Operations
             </div>
             <h1 className="app-title">Academic Operations & Faculty Portal</h1>
             <p className="app-subtitle">
@@ -78,7 +76,7 @@ const MainAppContent: React.FC = () => {
                 <div className="arch-icon-wrap">
                   <Layers size={20} />
                 </div>
-                <h3>Identity & RBAC Client</h3>
+                <h3>Academic Operations</h3>
               </div>
               <p>
                 React 19 + TypeScript. Role-aware navigation, interactive policy simulator, and

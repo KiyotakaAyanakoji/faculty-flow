@@ -392,4 +392,36 @@ describe('Task Management & Assignment API Test Suite (Phase 3)', () => {
     expect(asstRes.status).toBe(200);
     expect(asstRes.body.assignees).toHaveLength(0);
   });
+
+  it('Batch 1: Task creation does not require category and succeeds for authorized roles', async () => {
+    // Professor creates task without category field in payload
+    const res = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${profCsToken}`)
+      .send({
+        title: '[TEST] Category-Free Task Allocation',
+        description: 'Allocated purely based on role hierarchy and department boundary',
+        priority: 'High',
+        dueDate: '2026-12-01',
+        assigneeId: asstCsUserId,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.task.title).toBe('[TEST] Category-Free Task Allocation');
+    expect(res.body.task.status).toBe('Pending');
+    expect(res.body.task.assignee.id).toBe(asstCsUserId);
+    expect(res.body.task.category).toBe('Teaching'); // default for DB schema
+  });
+
+  it('Batch 1: GET /api/tasks/eligible-assignees returns candidates without category parameter', async () => {
+    const res = await request(app)
+      .get('/api/tasks/eligible-assignees')
+      .set('Authorization', `Bearer ${profCsToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.assignees.some((a: any) => a.id === asstCsUserId)).toBe(true);
+  });
 });
+

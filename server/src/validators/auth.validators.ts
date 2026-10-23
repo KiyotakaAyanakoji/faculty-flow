@@ -77,7 +77,5 @@ export const createDepartmentSchema = z.object({
 
 export const checkAllocationSchema = z.object({
   targetUserId: z.coerce.number({ required_error: 'Target user ID is required' }),
-  category: z.enum(ALL_TASK_CATEGORIES as [string, ...string[]], {
-    required_error: 'Task category is required',
-  }),
+  category: z.enum(ALL_TASK_CATEGORIES as [string, ...string[]]).optional(),
 });

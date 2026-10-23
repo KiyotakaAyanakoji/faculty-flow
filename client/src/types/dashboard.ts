@@ -51,7 +51,7 @@ export interface HodDashboardData {
     overdue: number;
     upcoming: number;
     byPriority: Record<TaskPriority, number>;
-    byCategory: Record<TaskCategory, number>;
+    byCategory?: Record<string, number>;
   };
   facultyWorkload: FacultyWorkloadItem[];
   syllabusOverview: {
@@ -91,7 +91,7 @@ export interface ProfessorDashboardData {
   upcomingDeadlines: Array<{
     id: number;
     title: string;
-    category: TaskCategory;
+    category?: TaskCategory;
     priority: TaskPriority;
     dueDate: string;
     status: string;
@@ -133,7 +133,7 @@ export interface AssistantProfessorDashboardData {
   upcomingDeadlines: Array<{
     id: number;
     title: string;
-    category: TaskCategory;
+    category?: TaskCategory;
     priority: TaskPriority;
     dueDate: string;
     status: string;

@@ -122,7 +122,7 @@ export async function createTask(req: Request, res: Response, next: NextFunction
       return next(new AppError('Cannot assign tasks to an inactive account.', 400, 'ASSIGNEE_INACTIVE'));
     }
 
-    // Verify creator has allocation rights for target and category
+    // Verify creator has allocation rights for target and category (if explicitly provided)
     const evaluation = canAllocateToTargetFaculty(
       {
         role: req.user.role,
@@ -133,7 +133,7 @@ export async function createTask(req: Request, res: Response, next: NextFunction
         role: assignee.role,
         departmentId: assignee.department_id,
       },
-      category
+      req.body.category ? (category as TaskCategory) : undefined
     );
 
     if (!evaluation.allowed) {
@@ -578,7 +578,7 @@ export async function reassignTask(req: Request, res: Response, next: NextFuncti
       throw new AppError('Cannot assign tasks to an inactive account.', 400, 'ASSIGNEE_INACTIVE');
     }
 
-    // Validate that the actor can allocate this category to the new assignee
+    // Validate that the actor can allocate work to the new assignee
     const evaluation = canAllocateToTargetFaculty(
       {
         role: req.user.role,
@@ -588,8 +588,7 @@ export async function reassignTask(req: Request, res: Response, next: NextFuncti
       {
         role: newAssignee.role,
         departmentId: newAssignee.department_id,
-      },
-      task.category
+      }
     );
 
     if (!evaluation.allowed) {
@@ -943,10 +942,8 @@ export async function getEligibleAssignees(req: Request, res: Response, next: Ne
       [req.user.departmentId]
     );
 
-    // Filter using canAllocateToTargetFaculty
+    // Filter using canAllocateToTargetFaculty based on role hierarchy and department rules
     const eligible = rows.filter(faculty => {
-      // Test category or default to Teaching
-      const testCategory = category || 'Teaching';
       const evaluation = canAllocateToTargetFaculty(
         {
           role: req.user!.role,
@@ -956,8 +953,7 @@ export async function getEligibleAssignees(req: Request, res: Response, next: Ne
         {
           role: faculty.role,
           departmentId: faculty.department_id,
-        },
-        testCategory
+        }
       );
       return evaluation.allowed;
     });
