@@ -10,22 +10,31 @@ import { errorHandler } from './middleware/errorHandler.js';
 export function createApp(): Express {
   const app = express();
 
+  // Security Headers Middleware
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
   // CORS configuration
   app.use(
     cors({
       origin: [env.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'],
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Idempotency-Key'],
     })
   );
 
   // Cookie parser
   app.use(cookieParser(env.COOKIE_SECRET));
 
-  // Body parsers
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Body parsers with bounded payload limits
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // Root health endpoint alias
   app.use('/health', healthRouter);

@@ -29,15 +29,19 @@ export class SmtpEmailTransport implements EmailTransport {
   private transporter: Transporter;
   private defaultFrom: string;
 
-  constructor() {
-    if (!env.SMTP_HOST) {
+  constructor(options?: { host?: string; port?: number; secure?: boolean; fromEmail?: string; fromName?: string }) {
+    const host = options?.host || env.SMTP_HOST;
+    if (!host) {
       throw new Error('Invalid SMTP configuration: SMTP_HOST must be provided when EMAIL_ENABLED is true.');
     }
 
     const transportConfig: any = {
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
+      host,
+      port: options?.port ?? env.SMTP_PORT,
+      secure: options?.secure ?? env.SMTP_SECURE,
+      connectionTimeout: 15000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
     };
 
     if (env.SMTP_USER || env.SMTP_PASS) {
@@ -48,7 +52,7 @@ export class SmtpEmailTransport implements EmailTransport {
     }
 
     this.transporter = nodemailer.createTransport(transportConfig);
-    this.defaultFrom = env.SMTP_FROM || 'Faculty Flow <noreply@facultyflow.local>';
+    this.defaultFrom = options?.fromEmail || env.SMTP_FROM || 'Faculty Flow <noreply@facultyflow.local>';
   }
 
   async send(options: SendMailOptions): Promise<SendMailResult> {

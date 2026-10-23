@@ -557,6 +557,7 @@ export async function updateEvent(req: Request, res: Response): Promise<void> {
     }
 
     if (updates.length > 0) {
+      updates.push('version = version + 1');
       values.push(eventId);
       await connection.query(
         `UPDATE academic_events SET ${updates.join(', ')} WHERE id = ?`,
@@ -573,10 +574,19 @@ export async function updateEvent(req: Request, res: Response): Promise<void> {
            WHERE ep.event_id = ?`,
           [eventId]
         );
+        const newVersion = Number(currentEvent.version || 1) + 1;
+        const idempotencyHeader = (req.headers['idempotency-key'] || req.headers['x-idempotency-key']) as string | undefined;
+
         for (const p of pUsers) {
+          const idempotencyKey = idempotencyHeader
+            ? `event-updated-${eventId}-${p.id}-${idempotencyHeader}`
+            : (newVersion === 2
+                ? `event-updated-${eventId}-${p.id}`
+                : `event-updated-${eventId}-${p.id}-v${newVersion}`);
+
           await enqueueNotification(
             {
-              idempotencyKey: `event-updated-${eventId}-${p.id}`,
+              idempotencyKey,
               eventType: NOTIFICATION_EVENTS.EVENT_UPDATED,
               recipientEmail: p.email,
               recipientName: p.full_name,
@@ -622,13 +632,18 @@ export async function deleteEvent(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const connection = await pool.getConnection();
+
   try {
-    const [existing] = await pool.query<any[]>(
-      `SELECT * FROM academic_events WHERE id = ?`,
+    await connection.beginTransaction();
+
+    const [existing] = await connection.query<any[]>(
+      `SELECT * FROM academic_events WHERE id = ? FOR UPDATE`,
       [eventId]
     );
 
     if (existing.length === 0) {
+      await connection.rollback();
       res.status(404).json({ error: 'Academic event not found' });
       return;
     }
@@ -642,6 +657,7 @@ export async function deleteEvent(req: Request, res: Response): Promise<void> {
     const isAdmin = user.role === ROLES.SYSTEM_ADMIN;
 
     if (!isCreator && !isDepartmentHOD && !isAdmin) {
+      await connection.rollback();
       res.status(403).json({
         error: 'Forbidden: You do not have permission to delete this academic event',
       });
@@ -649,7 +665,7 @@ export async function deleteEvent(req: Request, res: Response): Promise<void> {
     }
 
     // Retrieve participants to notify before deletion
-    const [pUsers] = await pool.query<any[]>(
+    const [pUsers] = await connection.query<any[]>(
       `SELECT u.id, u.email, u.full_name 
        FROM event_participants ep 
        JOIN users u ON ep.user_id = u.id 
@@ -658,38 +674,51 @@ export async function deleteEvent(req: Request, res: Response): Promise<void> {
     );
 
     // Retrieve documents to clean up storage files
-    const [docs] = await pool.query<any[]>(
+    const [docs] = await connection.query<any[]>(
       `SELECT file_identifier FROM event_documents WHERE event_id = ?`,
       [eventId]
     );
 
     // Delete event (foreign keys CASCADE to participants and documents)
-    await pool.query(`DELETE FROM academic_events WHERE id = ?`, [eventId]);
+    await connection.query(`DELETE FROM academic_events WHERE id = ?`, [eventId]);
 
-    // Enqueue cancellation notifications for participants
+    // Enqueue cancellation notifications for participants within transaction
+    const idempotencyHeader = (req.headers['idempotency-key'] || req.headers['x-idempotency-key']) as string | undefined;
     for (const p of pUsers) {
-      await enqueueNotification({
-        idempotencyKey: `event-cancelled-${eventId}-${p.id}`,
-        eventType: NOTIFICATION_EVENTS.EVENT_CANCELLED,
-        recipientEmail: p.email,
-        recipientName: p.full_name,
-        recipientId: p.id,
-        templateId: NOTIFICATION_EVENTS.EVENT_CANCELLED,
-        payload: {
-          title: currentEvent.title,
+      const idempotencyKey = idempotencyHeader
+        ? `event-cancelled-${eventId}-${p.id}-${idempotencyHeader}`
+        : `event-cancelled-${eventId}-${p.id}`;
+
+      await enqueueNotification(
+        {
+          idempotencyKey,
+          eventType: NOTIFICATION_EVENTS.EVENT_CANCELLED,
+          recipientEmail: p.email,
+          recipientName: p.full_name,
+          recipientId: p.id,
+          templateId: NOTIFICATION_EVENTS.EVENT_CANCELLED,
+          payload: {
+            title: currentEvent.title,
+          },
         },
-      });
+        connection
+      );
     }
 
-    // Unlink physical files
+    await connection.commit();
+
+    // Unlink physical files only after transaction commits successfully
     for (const doc of docs) {
       await deleteStoredFile(doc.file_identifier);
     }
 
     res.json({ message: 'Academic event and associated documents deleted successfully' });
   } catch (error: any) {
+    await connection.rollback();
     console.error('Error deleting academic event:', error);
     res.status(500).json({ error: 'Failed to delete academic event' });
+  } finally {
+    connection.release();
   }
 }
 

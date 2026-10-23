@@ -11,7 +11,7 @@ import {
   revokeAllUserTokens,
 } from '../services/token.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
-import { recordFailedLogin, clearFailedLogin } from '../middleware/rateLimiter.js';
+import { recordFailedLogin, clearFailedLogin, recordFailedPasswordChange, clearFailedPasswordChange } from '../middleware/rateLimiter.js';
 import { loginSchema, changePasswordSchema } from '../validators/auth.validators.js';
 import { UserProfile, UserRecord } from '../types/auth.types.js';
 
@@ -285,8 +285,11 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
 
     const isMatch = await bcrypt.compare(currentPassword, rows[0].password_hash);
     if (!isMatch) {
+      recordFailedPasswordChange(req);
       return next(new AppError('Current password does not match.', 400, 'INCORRECT_PASSWORD'));
     }
+
+    clearFailedPasswordChange(req);
 
     // Hash new password with 12 salt rounds
     const newHash = await bcrypt.hash(newPassword, 12);

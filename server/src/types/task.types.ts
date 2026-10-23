@@ -14,6 +14,7 @@ export interface TaskRecord {
   completed_at: string | Date | null;
   created_at: string | Date;
   updated_at: string | Date;
+  version?: number;
 
   // Joined fields
   creator_name?: string;
@@ -37,6 +38,7 @@ export interface TaskResponse {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  version?: number;
   creator: {
     id: number;
     fullName: string;

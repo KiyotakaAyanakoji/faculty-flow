@@ -41,6 +41,7 @@ export function formatTaskResponse(row: TaskRecord): TaskResponse {
     completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
+    version: row.version !== undefined ? Number(row.version) : 1,
     creator: {
       id: row.creator_id,
       fullName: row.creator_name || 'Unknown',
@@ -145,61 +146,81 @@ export async function createTask(req: Request, res: Response, next: NextFunction
       );
     }
 
-    // Insert task into database
-    const [result] = await pool.query<any>(
-      `INSERT INTO tasks (title, description, category, priority, status, due_date, creator_id, assignee_id, department_id)
-       VALUES (?, ?, ?, ?, 'Pending', ?, ?, ?, ?)`,
-      [
-        title,
-        description || null,
-        category,
-        priority,
-        dueDate,
-        req.user.id,
-        assignee.id,
-        req.user.departmentId,
-      ]
-    );
+    // Insert task into database within transaction
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
 
-    const taskId = result.insertId;
+      const [result] = await connection.query<any>(
+        `INSERT INTO tasks (title, description, category, priority, status, due_date, creator_id, assignee_id, department_id, version)
+         VALUES (?, ?, ?, ?, 'Pending', ?, ?, ?, ?, 1)`,
+        [
+          title,
+          description || null,
+          category,
+          priority,
+          dueDate,
+          req.user.id,
+          assignee.id,
+          req.user.departmentId,
+        ]
+      );
 
-    await logAuditEvent({
-      actorId: req.user.id,
-      action: 'TASK_CREATED',
-      targetType: 'TASK',
-      targetId: taskId,
-      details: { title, category, priority, assigneeId: assignee.id, dueDate },
-      ipAddress: req.ip || req.socket.remoteAddress,
-    });
+      const taskId = result.insertId;
 
-    // Enqueue task assignment notification to the assignee
-    await enqueueNotification({
-      idempotencyKey: `task-assigned-${taskId}-${assignee.id}`,
-      eventType: NOTIFICATION_EVENTS.TASK_ASSIGNED,
-      recipientEmail: assignee.email,
-      recipientName: assignee.full_name,
-      recipientId: assignee.id,
-      templateId: NOTIFICATION_EVENTS.TASK_ASSIGNED,
-      payload: {
-        title,
-        category,
-        priority,
-        dueDate,
-        creatorName: req.user.fullName || 'Academic Supervisor',
-        description: description || 'No description provided',
-      },
-    });
+      await logAuditEvent({
+        actorId: req.user.id,
+        action: 'TASK_CREATED',
+        targetType: 'TASK',
+        targetId: taskId,
+        details: { title, category, priority, assigneeId: assignee.id, dueDate },
+        ipAddress: req.ip || req.socket.remoteAddress,
+      });
 
-    const [createdRows] = await pool.query<any[]>(
-      `${TASK_SELECT_QUERY} WHERE t.id = ?`,
-      [taskId]
-    );
+      // Enqueue task assignment notification to the assignee
+      const idempotencyHeader = (req.headers['idempotency-key'] || req.headers['x-idempotency-key']) as string | undefined;
+      const idempotencyKey = idempotencyHeader
+        ? `task-assigned-${taskId}-${idempotencyHeader}`
+        : `task-assigned-${taskId}-${assignee.id}`;
 
-    res.status(201).json({
-      success: true,
-      message: 'Task created and allocated successfully.',
-      task: formatTaskResponse(createdRows[0]),
-    });
+      await enqueueNotification(
+        {
+          idempotencyKey,
+          eventType: NOTIFICATION_EVENTS.TASK_ASSIGNED,
+          recipientEmail: assignee.email,
+          recipientName: assignee.full_name,
+          recipientId: assignee.id,
+          templateId: NOTIFICATION_EVENTS.TASK_ASSIGNED,
+          payload: {
+            title,
+            category,
+            priority,
+            dueDate,
+            creatorName: req.user.fullName || 'Academic Supervisor',
+            description: description || 'No description provided',
+          },
+        },
+        connection
+      );
+
+      await connection.commit();
+
+      const [createdRows] = await pool.query<any[]>(
+        `${TASK_SELECT_QUERY} WHERE t.id = ?`,
+        [taskId]
+      );
+
+      res.status(201).json({
+        success: true,
+        message: 'Task created and allocated successfully.',
+        task: formatTaskResponse(createdRows[0]),
+      });
+    } catch (txErr) {
+      await connection.rollback();
+      throw txErr;
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     next(error);
   }
@@ -363,31 +384,34 @@ export async function getTaskById(req: Request, res: Response, next: NextFunctio
  * Update task core details (title, description, priority, due date)
  */
 export async function updateTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const connection = await pool.getConnection();
   try {
     if (!req.user) {
-      return next(new AppError('Authentication required.', 401, 'UNAUTHORIZED'));
+      throw new AppError('Authentication required.', 401, 'UNAUTHORIZED');
     }
 
     const taskId = Number(req.params.id);
     if (isNaN(taskId)) {
-      return next(new AppError('Invalid task ID.', 400, 'INVALID_TASK_ID'));
+      throw new AppError('Invalid task ID.', 400, 'INVALID_TASK_ID');
     }
 
     const parseResult = updateTaskSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return next(new AppError(parseResult.error.errors[0].message, 400, 'VALIDATION_ERROR'));
+      throw new AppError(parseResult.error.errors[0].message, 400, 'VALIDATION_ERROR');
     }
 
-    const [rows] = await pool.query<any[]>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query<any[]>('SELECT * FROM tasks WHERE id = ? FOR UPDATE', [taskId]);
     if (rows.length === 0) {
-      return next(new AppError('Task not found.', 404, 'TASK_NOT_FOUND'));
+      throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
     const task = rows[0];
 
     // Department check
     if (req.user.role === ROLES.SYSTEM_ADMIN || task.department_id !== req.user.departmentId) {
-      return next(new AppError('Access to other departments is forbidden.', 403, 'CROSS_DEPARTMENT_FORBIDDEN'));
+      throw new AppError('Access to other departments is forbidden.', 403, 'CROSS_DEPARTMENT_FORBIDDEN');
     }
 
     // Permission check: only task creator or HOD can modify task details
@@ -395,35 +419,49 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
     const isHOD = req.user.role === ROLES.HOD;
 
     if (!isCreator && !isHOD) {
-      return next(new AppError('Only the task creator or HOD can modify task details.', 403, 'UNAUTHORIZED_TASK_MODIFICATION'));
+      throw new AppError('Only the task creator or HOD can modify task details.', 403, 'UNAUTHORIZED_TASK_MODIFICATION');
     }
 
+    let hasChanges = false;
     const updates: string[] = [];
     const params: any[] = [];
 
-    if (parseResult.data.title !== undefined) {
+    if (parseResult.data.title !== undefined && parseResult.data.title !== task.title) {
       updates.push('title = ?');
       params.push(parseResult.data.title);
+      hasChanges = true;
     }
 
-    if (parseResult.data.description !== undefined) {
+    if (parseResult.data.description !== undefined && parseResult.data.description !== task.description) {
       updates.push('description = ?');
       params.push(parseResult.data.description);
+      hasChanges = true;
     }
 
-    if (parseResult.data.priority !== undefined) {
+    if (parseResult.data.priority !== undefined && parseResult.data.priority !== task.priority) {
       updates.push('priority = ?');
       params.push(parseResult.data.priority);
+      hasChanges = true;
     }
 
     if (parseResult.data.dueDate !== undefined) {
-      updates.push('due_date = ?');
-      params.push(parseResult.data.dueDate);
+      const currentDueDate = task.due_date instanceof Date
+        ? task.due_date.toISOString().slice(0, 10)
+        : String(task.due_date).slice(0, 10);
+      if (parseResult.data.dueDate !== currentDueDate) {
+        updates.push('due_date = ?');
+        params.push(parseResult.data.dueDate);
+        hasChanges = true;
+      }
     }
 
-    if (updates.length > 0) {
+    let newVersion = Number(task.version || 1);
+
+    if (hasChanges && updates.length > 0) {
+      updates.push('version = version + 1');
       params.push(taskId);
-      await pool.query(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`, params);
+      await connection.query(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`, params);
+      newVersion += 1;
 
       await logAuditEvent({
         actorId: req.user.id,
@@ -435,26 +473,38 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
       });
 
       // Notify assignee of updated task details
-      const [assigneeUser] = await pool.query<any[]>(
+      const [assigneeUser] = await connection.query<any[]>(
         'SELECT email, full_name FROM users WHERE id = ?',
         [task.assignee_id]
       );
       if (assigneeUser.length > 0) {
-        await enqueueNotification({
-          idempotencyKey: `task-updated-${taskId}-${task.assignee_id}`,
-          eventType: NOTIFICATION_EVENTS.TASK_UPDATED,
-          recipientEmail: assigneeUser[0].email,
-          recipientName: assigneeUser[0].full_name,
-          recipientId: task.assignee_id,
-          templateId: NOTIFICATION_EVENTS.TASK_UPDATED,
-          payload: {
-            title: parseResult.data.title || task.title,
-            updatedFields: updates.map(u => u.split(' =')[0]).join(', '),
-            updatedBy: req.user.fullName,
+        const idempotencyHeader = (req.headers['idempotency-key'] || req.headers['x-idempotency-key']) as string | undefined;
+        const idempotencyKey = idempotencyHeader
+          ? `task-updated-${taskId}-${idempotencyHeader}`
+          : (newVersion === 2
+              ? `task-updated-${taskId}-${task.assignee_id}`
+              : `task-updated-${taskId}-${task.assignee_id}-v${newVersion}`);
+
+        await enqueueNotification(
+          {
+            idempotencyKey,
+            eventType: NOTIFICATION_EVENTS.TASK_UPDATED,
+            recipientEmail: assigneeUser[0].email,
+            recipientName: assigneeUser[0].full_name,
+            recipientId: task.assignee_id,
+            templateId: NOTIFICATION_EVENTS.TASK_UPDATED,
+            payload: {
+              title: parseResult.data.title || task.title,
+              updatedFields: updates.filter(u => !u.startsWith('version')).map(u => u.split(' =')[0]).join(', '),
+              updatedBy: req.user.fullName,
+            },
           },
-        });
+          connection
+        );
       }
     }
+
+    await connection.commit();
 
     const [updated] = await pool.query<any[]>(`${TASK_SELECT_QUERY} WHERE t.id = ?`, [taskId]);
 
@@ -464,7 +514,10 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
       task: formatTaskResponse(updated[0]),
     });
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 }
 
@@ -473,53 +526,56 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
  * Reassign an existing task to a new assignee
  */
 export async function reassignTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const connection = await pool.getConnection();
   try {
     if (!req.user) {
-      return next(new AppError('Authentication required.', 401, 'UNAUTHORIZED'));
+      throw new AppError('Authentication required.', 401, 'UNAUTHORIZED');
     }
 
     const taskId = Number(req.params.id);
     if (isNaN(taskId)) {
-      return next(new AppError('Invalid task ID.', 400, 'INVALID_TASK_ID'));
+      throw new AppError('Invalid task ID.', 400, 'INVALID_TASK_ID');
     }
 
     const parseResult = reassignTaskSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return next(new AppError(parseResult.error.errors[0].message, 400, 'VALIDATION_ERROR'));
+      throw new AppError(parseResult.error.errors[0].message, 400, 'VALIDATION_ERROR');
     }
 
     const { assigneeId } = parseResult.data;
 
-    const [rows] = await pool.query<any[]>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query<any[]>('SELECT * FROM tasks WHERE id = ? FOR UPDATE', [taskId]);
     if (rows.length === 0) {
-      return next(new AppError('Task not found.', 404, 'TASK_NOT_FOUND'));
+      throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
     const task = rows[0];
 
     // Department boundary
     if (req.user.role === ROLES.SYSTEM_ADMIN || task.department_id !== req.user.departmentId) {
-      return next(new AppError('Access to other departments is forbidden.', 403, 'CROSS_DEPARTMENT_FORBIDDEN'));
+      throw new AppError('Access to other departments is forbidden.', 403, 'CROSS_DEPARTMENT_FORBIDDEN');
     }
 
     // Only creator or departmental HOD can reassign
     if (task.creator_id !== req.user.id && req.user.role !== ROLES.HOD) {
-      return next(new AppError('Only the task creator or HOD can reassign this task.', 403, 'REASSIGN_FORBIDDEN'));
+      throw new AppError('Only the task creator or HOD can reassign this task.', 403, 'REASSIGN_FORBIDDEN');
     }
 
     // Fetch new assignee
-    const [targetRows] = await pool.query<any[]>(
+    const [targetRows] = await connection.query<any[]>(
       'SELECT id, role, department_id, full_name, email, is_active FROM users WHERE id = ?',
       [assigneeId]
     );
 
     if (targetRows.length === 0) {
-      return next(new AppError('New assignee not found.', 404, 'ASSIGNEE_NOT_FOUND'));
+      throw new AppError('New assignee not found.', 404, 'ASSIGNEE_NOT_FOUND');
     }
 
     const newAssignee = targetRows[0];
     if (!newAssignee.is_active) {
-      return next(new AppError('Cannot assign tasks to an inactive account.', 400, 'ASSIGNEE_INACTIVE'));
+      throw new AppError('Cannot assign tasks to an inactive account.', 400, 'ASSIGNEE_INACTIVE');
     }
 
     // Validate that the actor can allocate this category to the new assignee
@@ -537,40 +593,57 @@ export async function reassignTask(req: Request, res: Response, next: NextFuncti
     );
 
     if (!evaluation.allowed) {
-      return next(
-        new AppError(
-          evaluation.reason || 'You do not have permission to assign to this faculty member.',
-          403,
-          'REASSIGN_FORBIDDEN'
-        )
+      throw new AppError(
+        evaluation.reason || 'You do not have permission to assign to this faculty member.',
+        403,
+        'REASSIGN_FORBIDDEN'
       );
     }
 
-    await pool.query('UPDATE tasks SET assignee_id = ? WHERE id = ?', [assigneeId, taskId]);
+    let newVersion = Number(task.version || 1);
+    const isDifferentAssignee = task.assignee_id !== assigneeId;
 
-    await logAuditEvent({
-      actorId: req.user.id,
-      action: 'TASK_REASSIGNED',
-      targetType: 'TASK',
-      targetId: taskId,
-      details: { previousAssigneeId: task.assignee_id, newAssigneeId: assigneeId },
-      ipAddress: req.ip || req.socket.remoteAddress,
-    });
+    if (isDifferentAssignee) {
+      newVersion += 1;
+      await connection.query('UPDATE tasks SET assignee_id = ?, version = version + 1 WHERE id = ?', [
+        assigneeId,
+        taskId,
+      ]);
 
-    // Enqueue task reassignment notification to new assignee
-    await enqueueNotification({
-      idempotencyKey: `task-reassigned-${taskId}-${newAssignee.id}`,
-      eventType: NOTIFICATION_EVENTS.TASK_REASSIGNED,
-      recipientEmail: newAssignee.email,
-      recipientName: newAssignee.full_name,
-      recipientId: newAssignee.id,
-      templateId: NOTIFICATION_EVENTS.TASK_REASSIGNED,
-      payload: {
-        title: task.title,
-        reassignedBy: req.user.fullName,
-        dueDate: task.due_date,
-      },
-    });
+      await logAuditEvent({
+        actorId: req.user.id,
+        action: 'TASK_REASSIGNED',
+        targetType: 'TASK',
+        targetId: taskId,
+        details: { previousAssigneeId: task.assignee_id, newAssigneeId: assigneeId },
+        ipAddress: req.ip || req.socket.remoteAddress,
+      });
+
+      // Enqueue task reassignment notification to new assignee
+      const idempotencyHeader = (req.headers['idempotency-key'] || req.headers['x-idempotency-key']) as string | undefined;
+      const idempotencyKey = idempotencyHeader
+        ? `task-reassigned-${taskId}-${idempotencyHeader}`
+        : `task-reassigned-${taskId}-${newAssignee.id}`;
+
+      await enqueueNotification(
+        {
+          idempotencyKey,
+          eventType: NOTIFICATION_EVENTS.TASK_REASSIGNED,
+          recipientEmail: newAssignee.email,
+          recipientName: newAssignee.full_name,
+          recipientId: newAssignee.id,
+          templateId: NOTIFICATION_EVENTS.TASK_REASSIGNED,
+          payload: {
+            title: task.title,
+            reassignedBy: req.user.fullName,
+            dueDate: task.due_date,
+          },
+        },
+        connection
+      );
+    }
+
+    await connection.commit();
 
     const [updated] = await pool.query<any[]>(`${TASK_SELECT_QUERY} WHERE t.id = ?`, [taskId]);
 
@@ -580,7 +653,10 @@ export async function reassignTask(req: Request, res: Response, next: NextFuncti
       task: formatTaskResponse(updated[0]),
     });
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 }
 
@@ -666,34 +742,37 @@ export async function updateTaskStatus(req: Request, res: Response, next: NextFu
  * Delete a task (creator or HOD only)
  */
 export async function deleteTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const connection = await pool.getConnection();
   try {
     if (!req.user) {
-      return next(new AppError('Authentication required.', 401, 'UNAUTHORIZED'));
+      throw new AppError('Authentication required.', 401, 'UNAUTHORIZED');
     }
 
     const taskId = Number(req.params.id);
     if (isNaN(taskId)) {
-      return next(new AppError('Invalid task ID.', 400, 'INVALID_TASK_ID'));
+      throw new AppError('Invalid task ID.', 400, 'INVALID_TASK_ID');
     }
 
-    const [rows] = await pool.query<any[]>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query<any[]>('SELECT * FROM tasks WHERE id = ? FOR UPDATE', [taskId]);
     if (rows.length === 0) {
-      return next(new AppError('Task not found.', 404, 'TASK_NOT_FOUND'));
+      throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
     const task = rows[0];
 
     // Department boundary
     if (req.user.role === ROLES.SYSTEM_ADMIN || task.department_id !== req.user.departmentId) {
-      return next(new AppError('Access to other departments is forbidden.', 403, 'CROSS_DEPARTMENT_FORBIDDEN'));
+      throw new AppError('Access to other departments is forbidden.', 403, 'CROSS_DEPARTMENT_FORBIDDEN');
     }
 
     // Permission: Only creator or HOD
     if (task.creator_id !== req.user.id && req.user.role !== ROLES.HOD) {
-      return next(new AppError('Only the task creator or HOD can delete this task.', 403, 'DELETE_FORBIDDEN'));
+      throw new AppError('Only the task creator or HOD can delete this task.', 403, 'DELETE_FORBIDDEN');
     }
 
-    await pool.query('DELETE FROM tasks WHERE id = ?', [taskId]);
+    await connection.query('DELETE FROM tasks WHERE id = ?', [taskId]);
 
     await logAuditEvent({
       actorId: req.user.id,
@@ -705,31 +784,44 @@ export async function deleteTask(req: Request, res: Response, next: NextFunction
     });
 
     // Notify assignee that task was cancelled/deleted
-    const [assigneeUser] = await pool.query<any[]>(
+    const [assigneeUser] = await connection.query<any[]>(
       'SELECT email, full_name FROM users WHERE id = ?',
       [task.assignee_id]
     );
     if (assigneeUser.length > 0) {
-      await enqueueNotification({
-        idempotencyKey: `task-cancelled-${taskId}-${task.assignee_id}`,
-        eventType: NOTIFICATION_EVENTS.TASK_CANCELLED,
-        recipientEmail: assigneeUser[0].email,
-        recipientName: assigneeUser[0].full_name,
-        recipientId: task.assignee_id,
-        templateId: NOTIFICATION_EVENTS.TASK_CANCELLED,
-        payload: {
-          title: task.title,
-          cancelledBy: req.user.fullName,
+      const idempotencyHeader = (req.headers['idempotency-key'] || req.headers['x-idempotency-key']) as string | undefined;
+      const idempotencyKey = idempotencyHeader
+        ? `task-cancelled-${taskId}-${idempotencyHeader}`
+        : `task-cancelled-${taskId}-${task.assignee_id}`;
+
+      await enqueueNotification(
+        {
+          idempotencyKey,
+          eventType: NOTIFICATION_EVENTS.TASK_CANCELLED,
+          recipientEmail: assigneeUser[0].email,
+          recipientName: assigneeUser[0].full_name,
+          recipientId: task.assignee_id,
+          templateId: NOTIFICATION_EVENTS.TASK_CANCELLED,
+          payload: {
+            title: task.title,
+            cancelledBy: req.user.fullName,
+          },
         },
-      });
+        connection
+      );
     }
+
+    await connection.commit();
 
     res.status(200).json({
       success: true,
       message: 'Task deleted successfully.',
     });
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 }
 

@@ -83,6 +83,7 @@ const HANDOVER_SELECT_QUERY = `
  * Create a new faculty handover record
  */
 export async function createHandover(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const connection = await pool.getConnection();
   try {
     if (!req.user) {
       return next(new AppError('Authentication required.', 401, 'UNAUTHORIZED'));
@@ -106,45 +107,43 @@ export async function createHandover(req: Request, res: Response, next: NextFunc
       return next(new AppError('You cannot create a handover to yourself.', 400, 'INVALID_RECIPIENT'));
     }
 
+    await connection.beginTransaction();
+
     // Verify recipient in same department and active
-    const [recipRows] = await pool.query<any[]>(
-      'SELECT id, department_id, full_name, email, is_active FROM users WHERE id = ?',
+    const [recipRows] = await connection.query<any[]>(
+      'SELECT id, department_id, full_name, email, is_active FROM users WHERE id = ? FOR UPDATE',
       [validated.recipientId]
     );
 
     if (recipRows.length === 0 || !recipRows[0].is_active) {
-      return next(new AppError('Recipient faculty member not found or inactive.', 404, 'RECIPIENT_NOT_FOUND'));
+      throw new AppError('Recipient faculty member not found or inactive.', 404, 'RECIPIENT_NOT_FOUND');
     }
 
     if (recipRows[0].department_id !== departmentId) {
-      return next(
-        new AppError(
-          'Handover recipient must belong to the same academic department.',
-          403,
-          'CROSS_DEPARTMENT_HANDOVER_DENIED'
-        )
+      throw new AppError(
+        'Handover recipient must belong to the same academic department.',
+        403,
+        'CROSS_DEPARTMENT_HANDOVER_DENIED'
       );
     }
 
     // Verify task if attached
     if (validated.taskId) {
-      const [taskRows] = await pool.query<any[]>(
-        'SELECT id, department_id, creator_id, assignee_id FROM tasks WHERE id = ?',
+      const [taskRows] = await connection.query<any[]>(
+        'SELECT id, department_id, creator_id, assignee_id FROM tasks WHERE id = ? FOR UPDATE',
         [validated.taskId]
       );
 
       if (taskRows.length === 0) {
-        return next(new AppError('Referenced task not found.', 404, 'TASK_NOT_FOUND'));
+        throw new AppError('Referenced task not found.', 404, 'TASK_NOT_FOUND');
       }
 
       const task = taskRows[0];
       if (task.department_id !== departmentId) {
-        return next(
-          new AppError(
-            'Cannot link a task from a different academic department.',
-            403,
-            'CROSS_DEPARTMENT_TASK_DENIED'
-          )
+        throw new AppError(
+          'Cannot link a task from a different academic department.',
+          403,
+          'CROSS_DEPARTMENT_TASK_DENIED'
         );
       }
 
@@ -154,17 +153,15 @@ export async function createHandover(req: Request, res: Response, next: NextFunc
       const isAssignee = task.assignee_id === senderId;
 
       if (!isHOD && !isCreator && !isAssignee) {
-        return next(
-          new AppError(
-            'You can only link handovers to tasks that you created or are assigned to.',
-            403,
-            'TASK_AUTHORITY_REQUIRED'
-          )
+        throw new AppError(
+          'You can only link handovers to tasks that you created or are assigned to.',
+          403,
+          'TASK_AUTHORITY_REQUIRED'
         );
       }
     }
 
-    const [result] = await pool.query<any>(
+    const [result] = await connection.query<any>(
       `INSERT INTO handovers (
         sender_id, recipient_id, department_id, task_id, title, notes, status, due_date
       ) VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)`,
@@ -180,10 +177,33 @@ export async function createHandover(req: Request, res: Response, next: NextFunc
     );
 
     const newId = result.insertId;
-    const [createdRows] = await pool.query<any[]>(
+    const [createdRows] = await connection.query<any[]>(
       `${HANDOVER_SELECT_QUERY} WHERE h.id = ?`,
       [newId]
     );
+
+    const idempotencyHeader = req.header('idempotency-key') || req.header('x-idempotency-key');
+
+    // Enqueue notification to the handover recipient inside the transaction
+    await enqueueNotification(
+      {
+        idempotencyKey: idempotencyHeader ? `handover-created-${idempotencyHeader}` : `handover-created-${newId}-${recipRows[0].id}`,
+        eventType: NOTIFICATION_EVENTS.HANDOVER_CREATED,
+        recipientEmail: recipRows[0].email,
+        recipientName: recipRows[0].full_name,
+        recipientId: recipRows[0].id,
+        templateId: NOTIFICATION_EVENTS.HANDOVER_CREATED,
+        payload: {
+          title: validated.title,
+          senderName: req.user.fullName,
+          notes: validated.notes,
+          dueDate: validated.dueDate || 'No target date',
+        },
+      },
+      connection
+    );
+
+    await connection.commit();
 
     await logAuditEvent({
       actorId: senderId,
@@ -198,28 +218,15 @@ export async function createHandover(req: Request, res: Response, next: NextFunc
       ipAddress: req.ip,
     });
 
-    // Enqueue notification to the handover recipient
-    await enqueueNotification({
-      idempotencyKey: `handover-created-${newId}-${recipRows[0].id}`,
-      eventType: NOTIFICATION_EVENTS.HANDOVER_CREATED,
-      recipientEmail: recipRows[0].email,
-      recipientName: recipRows[0].full_name,
-      recipientId: recipRows[0].id,
-      templateId: NOTIFICATION_EVENTS.HANDOVER_CREATED,
-      payload: {
-        title: validated.title,
-        senderName: req.user.fullName,
-        notes: validated.notes,
-        dueDate: validated.dueDate || 'No target date',
-      },
-    });
-
     res.status(201).json({
       success: true,
       handover: formatHandoverResponse(createdRows[0]),
     });
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 }
 
@@ -362,23 +369,30 @@ export async function getHandoverById(req: Request, res: Response, next: NextFun
  * Update handover status (Accept, Reject, Complete)
  */
 export async function updateHandoverStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const connection = await pool.getConnection();
   try {
     if (!req.user) {
       return next(new AppError('Authentication required.', 401, 'UNAUTHORIZED'));
     }
 
     const handoverId = Number(req.params.id);
-    const [rows] = await pool.query<any[]>('SELECT * FROM handovers WHERE id = ?', [handoverId]);
+    if (!handoverId || isNaN(handoverId)) {
+      return next(new AppError('Invalid handover ID.', 400, 'INVALID_ID'));
+    }
+
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query<any[]>('SELECT * FROM handovers WHERE id = ? FOR UPDATE', [handoverId]);
 
     if (rows.length === 0) {
-      return next(new AppError('Handover not found.', 404, 'NOT_FOUND'));
+      throw new AppError('Handover not found.', 404, 'NOT_FOUND');
     }
 
     const existing = rows[0];
 
     // Department isolation
     if (existing.department_id !== req.user.departmentId) {
-      return next(new AppError('Access denied.', 403, 'FORBIDDEN'));
+      throw new AppError('Access denied.', 403, 'FORBIDDEN');
     }
 
     const validated = updateHandoverStatusSchema.parse(req.body);
@@ -389,23 +403,24 @@ export async function updateHandoverStatus(req: Request, res: Response, next: Ne
     // Authorization per transition
     if (validated.status === 'Accepted' || validated.status === 'Rejected') {
       if (!isRecipient) {
-        return next(
-          new AppError(
-            'Only the designated recipient can accept or reject this handover.',
-            403,
-            'RECIPIENT_ACTION_REQUIRED'
-          )
+        throw new AppError(
+          'Only the designated recipient can accept or reject this handover.',
+          403,
+          'RECIPIENT_ACTION_REQUIRED'
         );
       }
     } else if (validated.status === 'Completed') {
       if (!isSender && !isRecipient && !isHOD) {
-        return next(new AppError('Not authorized to complete this handover.', 403, 'FORBIDDEN'));
+        throw new AppError('Not authorized to complete this handover.', 403, 'FORBIDDEN');
       }
     }
 
+    const isStatusChanged = existing.status !== validated.status;
+    const isNotesChanged = validated.responseNotes !== undefined && validated.responseNotes !== existing.response_notes;
+
     const completedAtClause = validated.status === 'Completed' ? 'completed_at = CURRENT_TIMESTAMP,' : '';
 
-    await pool.query(
+    await connection.query(
       `UPDATE handovers 
        SET status = ?, 
            response_notes = COALESCE(?, response_notes),
@@ -417,16 +432,46 @@ export async function updateHandoverStatus(req: Request, res: Response, next: Ne
 
     // If handover is accepted and has a linked task, if task is pending, update to In Progress
     if (validated.status === 'Accepted' && existing.task_id) {
-      await pool.query(
+      await connection.query(
         "UPDATE tasks SET status = 'In Progress', assignee_id = ? WHERE id = ? AND status = 'Pending'",
         [existing.recipient_id, existing.task_id]
       );
     }
 
-    const [updatedRows] = await pool.query<any[]>(
+    const [updatedRows] = await connection.query<any[]>(
       `${HANDOVER_SELECT_QUERY} WHERE h.id = ?`,
       [handoverId]
     );
+
+    // Notify the sender about recipient's status decision
+    if (isStatusChanged || isNotesChanged) {
+      const [senderRows] = await connection.query<any[]>(
+        'SELECT email, full_name FROM users WHERE id = ?',
+        [existing.sender_id]
+      );
+      if (senderRows.length > 0) {
+        const idempotencyHeader = req.header('idempotency-key') || req.header('x-idempotency-key');
+        await enqueueNotification(
+          {
+            idempotencyKey: idempotencyHeader ? `handover-status-${idempotencyHeader}` : `handover-status-${handoverId}-${validated.status}`,
+            eventType: NOTIFICATION_EVENTS.HANDOVER_STATUS_UPDATED,
+            recipientEmail: senderRows[0].email,
+            recipientName: senderRows[0].full_name,
+            recipientId: existing.sender_id,
+            templateId: NOTIFICATION_EVENTS.HANDOVER_STATUS_UPDATED,
+            payload: {
+              title: existing.title,
+              status: validated.status,
+              recipientName: req.user.fullName,
+              responseNotes: validated.responseNotes || 'No response notes provided.',
+            },
+          },
+          connection
+        );
+      }
+    }
+
+    await connection.commit();
 
     await logAuditEvent({
       actorId: req.user.id,
@@ -440,34 +485,15 @@ export async function updateHandoverStatus(req: Request, res: Response, next: Ne
       ipAddress: req.ip,
     });
 
-    // Notify the sender about recipient's status decision
-    const [senderRows] = await pool.query<any[]>(
-      'SELECT email, full_name FROM users WHERE id = ?',
-      [existing.sender_id]
-    );
-    if (senderRows.length > 0) {
-      await enqueueNotification({
-        idempotencyKey: `handover-status-${handoverId}-${validated.status}`,
-        eventType: NOTIFICATION_EVENTS.HANDOVER_STATUS_UPDATED,
-        recipientEmail: senderRows[0].email,
-        recipientName: senderRows[0].full_name,
-        recipientId: existing.sender_id,
-        templateId: NOTIFICATION_EVENTS.HANDOVER_STATUS_UPDATED,
-        payload: {
-          title: existing.title,
-          status: validated.status,
-          recipientName: req.user.fullName,
-          responseNotes: validated.responseNotes || 'No response notes provided.',
-        },
-      });
-    }
-
     res.status(200).json({
       success: true,
       handover: formatHandoverResponse(updatedRows[0]),
     });
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 }
 

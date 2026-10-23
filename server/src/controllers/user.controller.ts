@@ -225,6 +225,26 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
           )
         );
       }
+    } else if (isSelf) {
+      // System Admin cannot demote or deactivate their own account
+      if (req.body.role !== undefined && req.body.role !== ROLES.SYSTEM_ADMIN) {
+        return next(
+          new AppError(
+            'System Administrators cannot demote their own active administrative account.',
+            400,
+            'CANNOT_DEMOTE_SELF'
+          )
+        );
+      }
+      if (req.body.isActive !== undefined && !req.body.isActive) {
+        return next(
+          new AppError(
+            'System Administrators cannot deactivate their own active administrative account.',
+            400,
+            'CANNOT_DEACTIVATE_SELF'
+          )
+        );
+      }
     }
 
     // Fetch existing user

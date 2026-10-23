@@ -131,6 +131,12 @@ export class NotificationWorker {
       // 3. Process each claimed job
       for (const job of claimedJobs) {
         try {
+          // Touch/renew lease timestamp for this job to prevent stale reclamation during slow sends
+          await pool.query(
+            'UPDATE email_notifications SET locked_at = NOW() WHERE id = ? AND locked_by = ?',
+            [job.id, this.workerId]
+          );
+
           const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
           const rendered = renderEmailTemplate(job.template_id, payload);
 
@@ -143,18 +149,25 @@ export class NotificationWorker {
           });
 
           if (sendResult.success) {
-            // Mark job as Sent
-            await pool.query(
+            // Mark job as Sent only if this worker still holds the lease
+            const [sentResult] = await pool.query<ResultSetHeader>(
               `UPDATE email_notifications
                SET status = 'Sent',
                    sent_at = NOW(),
                    error_message = NULL,
                    locked_at = NULL,
                    locked_by = NULL
-               WHERE id = ?`,
-              [job.id]
+               WHERE id = ? AND locked_by = ?`,
+              [job.id, this.workerId]
             );
-            processedCount++;
+
+            if (sentResult.affectedRows > 0) {
+              processedCount++;
+            } else {
+              console.warn(
+                `[NotificationWorker ${this.workerId}] Job ${job.id} lease expired or was reclaimed before completion; skipped overwrite.`
+              );
+            }
           } else {
             // Handle delivery failure
             await this.handleJobFailure(job, sendResult.error || 'Transport delivery failed');
@@ -240,8 +253,8 @@ export class NotificationWorker {
              error_message = ?,
              locked_at = NULL,
              locked_by = NULL
-         WHERE id = ?`,
-        [nextAttempts, sanitizedError, job.id]
+         WHERE id = ? AND locked_by = ?`,
+        [nextAttempts, sanitizedError, job.id, this.workerId]
       );
 
       console.warn(
@@ -262,8 +275,8 @@ export class NotificationWorker {
              error_message = ?,
              locked_at = NULL,
              locked_by = NULL
-         WHERE id = ?`,
-        [nextAttempts, backoffSec, sanitizedError, job.id]
+         WHERE id = ? AND locked_by = ?`,
+        [nextAttempts, backoffSec, sanitizedError, job.id, this.workerId]
       );
     }
   }

@@ -904,4 +904,46 @@ When rotating SMTP passwords or API keys:
 2. Trigger a graceful restart of the server instances.
 3. Because credentials are read directly from process environment variables and never persisted to the database or cached on disk, rotated credentials take effect immediately upon reboot with zero queue loss.
 
+---
+
+## Phase 8: Integration, Security, and Regression Hardening
+
+Phase 8 hardens system integration, concurrency, transactional integrity, notification idempotency, and security across Faculty Flow 2.0.
+
+### 1. Business Versioning & Event Idempotency
+- **Migration `008_business_versioning_and_idempotency.sql`**:
+  - Adds `version INT NOT NULL DEFAULT 1` to `tasks` and `academic_events`.
+  - Distinguishes duplicate retries of a single event from legitimate subsequent updates on the same record.
+  - Initial creation and first updates retain backwards-compatible keys (e.g. `task-assigned-${taskId}-${assigneeId}` and `task-updated-${taskId}-${assigneeId}`).
+  - Subsequent updates increment record versions (`version = version + 1`) and produce versioned keys (`task-updated-${taskId}-${assigneeId}-v${version}`).
+  - Client-supplied `Idempotency-Key` or `X-Idempotency-Key` headers are fully supported across task, leave, event, and handover routes.
+  - Updates with no change payloads act as no-ops without creating redundant emails.
+
+### 2. Transactional Queue Coupling
+- Notification enqueuing is transactionally coupled to business changes:
+  - `task.controller.ts` (`createTask`, `updateTask`, `reassignTask`, `deleteTask`)
+  - `handover.controller.ts` (`createHandover`, `updateHandoverStatus`)
+  - `event.controller.ts` (`createEvent`, `updateEvent`, `deleteEvent`)
+  - `leave.controller.ts` (`submitLeaveRequest`, `decideLeaveRequest`, `cancelLeaveRequest`)
+- Database connection rollbacks leave zero orphaned notifications in `email_notifications`.
+- Physical file unlinking (e.g. deleted event PDFs) occurs only after the database transaction commits.
+
+### 3. Worker Concurrency & Lease Safety
+- **Per-Job Lease Renewal**: Workers touch `locked_at = NOW()` per job during batch processing to prevent slow SMTP calls from colliding with the 5-minute stale-job recovery window.
+- **Conditional Update Guards**: All status transitions (`Sent`, `Failed`, retry rescheduling) verify `WHERE id = ? AND locked_by = ?` to ensure late workers never overwrite reclaimed jobs.
+- **Transport Timeouts**: `SmtpEmailTransport` explicitly enforces `connectionTimeout: 15000`, `greetingTimeout: 10000`, and `socketTimeout: 20000`.
+
+### 4. Security Hardening & Administrative Safeguards
+- **HTTP Security Headers**: Express middleware emits `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 0`, and `Referrer-Policy: strict-origin-when-cross-origin`.
+- **Bounded Request Limits**: Enforced 1MB request body parsing limits.
+- **Rate Limiting**: `POST /api/auth/change-password` enforces strict rate limiting (max 5 failed attempts within 15 minutes before 15-minute lockouts).
+- **Admin Self-Protection**: System Administrators are prohibited from demoting their own role (`CANNOT_DEMOTE_SELF`) or deactivating their own account (`CANNOT_DEACTIVATE_SELF`).
+
+### 5. Verification & Test Metrics
+- **Test Results**: 153 tests passed across 18 test suites (139 server tests in 11 suites, 14 client tests in 7 suites).
+- **Typecheck**: Clean pass with 0 errors (`tsc --noEmit` across both workspaces).
+- **Build**: Clean pass (`vite build` client bundle + `tsc` server build).
+- **Production Dependencies**: 0 vulnerabilities (`npm audit --omit=dev`).
+
+
 

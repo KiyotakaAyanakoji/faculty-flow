@@ -336,10 +336,12 @@ export async function submitLeaveRequest(
       [requestId, userId, userId, `Submitted ${daysCount} day(s) leave request.`]
     );
 
+    const idempotencyHeader = req.header('idempotency-key') || req.header('x-idempotency-key');
+
     // Phase 7: Enqueue submission acknowledgement to requester
     await enqueueNotification(
       {
-        idempotencyKey: `leave-submitted-${requestId}-${userId}`,
+        idempotencyKey: idempotencyHeader ? `leave-submitted-${idempotencyHeader}` : `leave-submitted-${requestId}-${userId}`,
         eventType: NOTIFICATION_EVENTS.LEAVE_SUBMITTED,
         recipientEmail: req.user!.email,
         recipientName: req.user!.fullName,
@@ -363,7 +365,7 @@ export async function submitLeaveRequest(
     for (const hod of hodRows) {
       await enqueueNotification(
         {
-          idempotencyKey: `leave-pending-${requestId}-${hod.id}`,
+          idempotencyKey: idempotencyHeader ? `leave-pending-${idempotencyHeader}-${hod.id}` : `leave-pending-${requestId}-${hod.id}`,
           eventType: NOTIFICATION_EVENTS.LEAVE_PENDING_APPROVAL,
           recipientEmail: hod.email,
           recipientName: hod.full_name,
@@ -841,10 +843,11 @@ export async function decideLeaveRequest(
       const requester = requesterRows[0];
       const isApproved = parsed.status === 'Approved';
       const eventType = isApproved ? NOTIFICATION_EVENTS.LEAVE_APPROVED : NOTIFICATION_EVENTS.LEAVE_REJECTED;
+      const idempotencyHeader = req.header('idempotency-key') || req.header('x-idempotency-key');
 
       await enqueueNotification(
         {
-          idempotencyKey: `leave-decided-${requestId}-${parsed.status.toLowerCase()}`,
+          idempotencyKey: idempotencyHeader ? `leave-decided-${idempotencyHeader}` : `leave-decided-${requestId}-${parsed.status.toLowerCase()}`,
           eventType,
           recipientEmail: requester.email,
           recipientName: requester.full_name,
@@ -1015,9 +1018,10 @@ export async function cancelLeaveRequest(
     );
 
     // Phase 7: Enqueue cancellation notification to requester
+    const idempotencyHeader = req.header('idempotency-key') || req.header('x-idempotency-key');
     await enqueueNotification(
       {
-        idempotencyKey: `leave-cancelled-${requestId}`,
+        idempotencyKey: idempotencyHeader ? `leave-cancelled-${idempotencyHeader}` : `leave-cancelled-${requestId}`,
         eventType: NOTIFICATION_EVENTS.LEAVE_CANCELLED,
         recipientEmail: req.user!.email,
         recipientName: req.user!.fullName,
