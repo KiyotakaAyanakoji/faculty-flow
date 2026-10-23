@@ -251,7 +251,7 @@ export const CalendarManagementView: React.FC = () => {
   const openCreatePersonalModal = () => {
     setPersonalTitle('');
     setPersonalDate(new Date().toISOString().slice(0, 10));
-    setPersonalStartTime('09:00');
+    setPersonalStartTime('');
     setPersonalEndTime('');
     setPersonalDescription('');
     setPersonalFormError(null);
@@ -270,11 +270,7 @@ export const CalendarManagementView: React.FC = () => {
       setPersonalFormError('Event date is required');
       return;
     }
-    if (!personalStartTime) {
-      setPersonalFormError('Start time is required');
-      return;
-    }
-    if (personalEndTime && personalEndTime < personalStartTime) {
+    if (personalStartTime && personalEndTime && personalEndTime < personalStartTime) {
       setPersonalFormError('End time cannot be earlier than start time');
       return;
     }
@@ -291,8 +287,8 @@ export const CalendarManagementView: React.FC = () => {
         body: JSON.stringify({
           title: personalTitle.trim(),
           eventDate: personalDate,
-          startTime: personalStartTime,
-          endTime: personalEndTime || null,
+          startTime: personalStartTime.trim() || null,
+          endTime: personalEndTime.trim() || null,
           description: personalDescription.trim() || null,
         }),
       });
@@ -321,7 +317,7 @@ export const CalendarManagementView: React.FC = () => {
     setEditPersonalId(pe.id);
     setPersonalTitle(pe.title);
     setPersonalDate(pe.eventDate.slice(0, 10));
-    setPersonalStartTime(pe.startTime);
+    setPersonalStartTime(pe.startTime || '');
     setPersonalEndTime(pe.endTime || '');
     setPersonalDescription(pe.description || '');
     setPersonalFormError(null);
@@ -342,11 +338,7 @@ export const CalendarManagementView: React.FC = () => {
       setPersonalFormError('Event date is required');
       return;
     }
-    if (!personalStartTime) {
-      setPersonalFormError('Start time is required');
-      return;
-    }
-    if (personalEndTime && personalEndTime < personalStartTime) {
+    if (personalStartTime && personalEndTime && personalEndTime < personalStartTime) {
       setPersonalFormError('End time cannot be earlier than start time');
       return;
     }
@@ -363,8 +355,8 @@ export const CalendarManagementView: React.FC = () => {
         body: JSON.stringify({
           title: personalTitle.trim(),
           eventDate: personalDate,
-          startTime: personalStartTime,
-          endTime: personalEndTime || null,
+          startTime: personalStartTime.trim() || null,
+          endTime: personalEndTime.trim() || null,
           description: personalDescription.trim() || null,
         }),
       });
@@ -1027,12 +1019,14 @@ export const CalendarManagementView: React.FC = () => {
                           e.stopPropagation();
                           openPersonalDetails(pe);
                         }}
-                        title={`[Personal] ${pe.title} (${pe.startTime}${pe.endTime ? ` - ${pe.endTime}` : ''})`}
+                        title={`[Personal] ${pe.title}${pe.startTime ? ` (${pe.startTime}${pe.endTime ? ` - ${pe.endTime}` : ''})` : ''}`}
                       >
                         <UserCheck size={11} style={{ flexShrink: 0, color: '#c084fc' }} />
-                        <span className="chip-time" style={{ fontSize: '0.68rem', opacity: 0.85 }}>
-                          {pe.startTime}
-                        </span>
+                        {pe.startTime && (
+                          <span className="chip-time" style={{ fontSize: '0.68rem', opacity: 0.85 }}>
+                            {pe.startTime}
+                          </span>
+                        )}
                         <span className="chip-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {pe.title}
                         </span>
@@ -1118,7 +1112,7 @@ export const CalendarManagementView: React.FC = () => {
                           <UserCheck size={12} /> Personal
                         </span>
                         <span className="badge secondary">
-                          <Clock size={12} /> {pe.startTime}{pe.endTime ? ` - ${pe.endTime}` : ''}
+                          <Clock size={12} /> {pe.startTime ? `${pe.startTime}${pe.endTime ? ` - ${pe.endTime}` : ''}` : 'All Day'}
                         </span>
                       </div>
 
@@ -1286,7 +1280,7 @@ export const CalendarManagementView: React.FC = () => {
                             <UserCheck size={12} /> Personal
                           </span>
                           <span className="badge secondary">
-                            <Clock size={12} /> {pe.startTime}{pe.endTime ? ` - ${pe.endTime}` : ''}
+                            <Clock size={12} /> {pe.startTime ? `${pe.startTime}${pe.endTime ? ` - ${pe.endTime}` : ''}` : 'All Day'}
                           </span>
                         </div>
 
@@ -2083,13 +2077,10 @@ export const CalendarManagementView: React.FC = () => {
 
               <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
-                  <label htmlFor="personal-start-time">
-                    Start Time <span className="required-star">*</span>
-                  </label>
+                  <label htmlFor="personal-start-time">Start Time (Optional)</label>
                   <input
                     id="personal-start-time"
                     type="time"
-                    required
                     value={personalStartTime}
                     onChange={e => setPersonalStartTime(e.target.value)}
                     className="form-control"
@@ -2200,8 +2191,9 @@ export const CalendarManagementView: React.FC = () => {
                   <div>
                     <strong>Time:</strong>{' '}
                     <span>
-                      {selectedPersonalEvent.startTime}
-                      {selectedPersonalEvent.endTime ? ` - ${selectedPersonalEvent.endTime}` : ''}
+                      {selectedPersonalEvent.startTime
+                        ? `${selectedPersonalEvent.startTime}${selectedPersonalEvent.endTime ? ` - ${selectedPersonalEvent.endTime}` : ''}`
+                        : 'All Day / Untimed'}
                     </span>
                   </div>
                 </div>
@@ -2354,13 +2346,10 @@ export const CalendarManagementView: React.FC = () => {
 
               <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
-                  <label htmlFor="edit-personal-start-time">
-                    Start Time <span className="required-star">*</span>
-                  </label>
+                  <label htmlFor="edit-personal-start-time">Start Time (Optional)</label>
                   <input
                     id="edit-personal-start-time"
                     type="time"
-                    required
                     value={personalStartTime}
                     onChange={e => setPersonalStartTime(e.target.value)}
                     className="form-control"

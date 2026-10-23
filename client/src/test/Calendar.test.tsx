@@ -15,6 +15,18 @@ describe('Phase 5 Frontend Tests - Academic Calendar & Secure PDF Uploads', () =
     isActive: true,
   };
 
+  const mockAsstUser = {
+    id: 4,
+    email: 'asst.cs@facultyflow.local',
+    fullName: 'Claude Shannon (Assistant Professor)',
+    role: 'ASSISTANT_PROFESSOR',
+    departmentId: 1,
+    departmentName: 'Computer Science and Engineering',
+    departmentCode: 'CS',
+    canAssignWork: false,
+    isActive: true,
+  };
+
   const mockEvents = [
     {
       id: 501,
@@ -85,11 +97,13 @@ describe('Phase 5 Frontend Tests - Academic Calendar & Secure PDF Uploads', () =
         }
 
         if (url.includes('/api/auth/login')) {
+          const body = _options?.body ? JSON.parse(_options.body) : {};
+          const isAsst = body.email?.includes('asst');
           return Promise.resolve({
             ok: true,
             json: async () => ({
               success: true,
-              user: mockHodUser,
+              user: isAsst ? mockAsstUser : mockHodUser,
             }),
           });
         }
@@ -559,6 +573,93 @@ describe('Phase 5 Frontend Tests - Academic Calendar & Secure PDF Uploads', () =
 
     await waitFor(() => {
       expect(screen.queryByTestId('edit-personal-event-modal')).not.toBeInTheDocument();
+    });
+  });
+
+  it('Assistant Professor can see and click Add Personal Event button while Schedule Academic Event is hidden', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'asst.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    // Add Personal Event button MUST be present for Assistant Professor
+    await waitFor(() => {
+      expect(screen.getByTestId('add-personal-event-btn')).toBeInTheDocument();
+    });
+
+    // Schedule Academic Event button MUST be absent for Assistant Professor
+    expect(screen.queryByRole('button', { name: /Schedule Academic Event/i })).not.toBeInTheDocument();
+
+    // Clicking Add Personal Event opens the modal
+    fireEvent.click(screen.getByTestId('add-personal-event-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-personal-event-modal')).toBeInTheDocument();
+    });
+  });
+
+  it('allows submitting Create Personal Event form with optional start/end times omitted (all-day event)', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'asst.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('add-personal-event-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('add-personal-event-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-personal-event-modal')).toBeInTheDocument();
+    });
+
+    // Enter required title and date only (leave Start Time and End Time empty)
+    fireEvent.change(screen.getByLabelText(/Event Title/i), {
+      target: { value: 'Annual Faculty Research Day (Untimed)' },
+    });
+    fireEvent.change(screen.getByLabelText(/Date/i), {
+      target: { value: '2026-11-25' },
+    });
+    fireEvent.change(screen.getByLabelText(/Start Time/i), {
+      target: { value: '' },
+    });
+
+    fireEvent.click(screen.getByTestId('save-personal-event-btn'));
+
+    // Modal successfully submits and closes without start time error
+    await waitFor(() => {
+      expect(screen.queryByTestId('create-personal-event-modal')).not.toBeInTheDocument();
     });
   });
 });

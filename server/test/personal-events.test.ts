@@ -296,4 +296,50 @@ describe('Private Personal Events API Test Suite (Batch 5)', () => {
     const inHolidays = holidaysRes.body.holidays.find((h: any) => h.name.includes('Super Secret Personal Event'));
     expect(inHolidays).toBeUndefined();
   });
+
+  it('Supports personal events with optional start/end times omitted (all-day/untimed)', async () => {
+    // 1. Create with only title and date (no startTime or endTime)
+    const createRes = await request(app)
+      .post('/api/personal-events')
+      .set('Authorization', `Bearer ${profCsToken}`)
+      .send({
+        title: '[TEST]-Annual Faculty Grant Submission Deadline',
+        eventDate: '2026-12-20',
+        description: 'Submit preliminary proposal draft before midnight',
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.success).toBe(true);
+    expect(createRes.body.event.title).toBe('[TEST]-Annual Faculty Grant Submission Deadline');
+    expect(createRes.body.event.startTime).toBeNull();
+    expect(createRes.body.event.endTime).toBeNull();
+
+    const eventId = createRes.body.event.id;
+
+    // 2. Fetch and confirm startTime is null
+    const getRes = await request(app)
+      .get(`/api/personal-events/${eventId}`)
+      .set('Authorization', `Bearer ${profCsToken}`);
+
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.event.startTime).toBeNull();
+    expect(getRes.body.event.endTime).toBeNull();
+
+    // 3. Update to add startTime
+    const updateRes = await request(app)
+      .patch(`/api/personal-events/${eventId}`)
+      .set('Authorization', `Bearer ${profCsToken}`)
+      .send({
+        startTime: '17:00',
+      });
+
+    expect(updateRes.status).toBe(200);
+
+    const getRes2 = await request(app)
+      .get(`/api/personal-events/${eventId}`)
+      .set('Authorization', `Bearer ${profCsToken}`);
+
+    expect(getRes2.status).toBe(200);
+    expect(getRes2.body.event.startTime).toBe('17:00');
+  });
 });

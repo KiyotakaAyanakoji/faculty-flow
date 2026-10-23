@@ -189,7 +189,7 @@ export async function createPersonalEvent(req: Request, res: Response): Promise<
         data.title,
         data.description || null,
         data.eventDate,
-        data.startTime,
+        data.startTime ? data.startTime : null,
         data.endTime || null,
       ]
     );
@@ -205,7 +205,7 @@ export async function createPersonalEvent(req: Request, res: Response): Promise<
         title: data.title,
         description: data.description || null,
         eventDate: data.eventDate,
-        startTime: data.startTime,
+        startTime: data.startTime || null,
         endTime: data.endTime || null,
         isPersonal: true,
         category: 'Personal',
@@ -284,7 +284,7 @@ export async function updatePersonalEvent(req: Request, res: Response): Promise<
     }
     if (data.startTime !== undefined) {
       updates.push('start_time = ?');
-      values.push(data.startTime);
+      values.push(data.startTime ? data.startTime : null);
     }
     if (data.endTime !== undefined) {
       updates.push('end_time = ?');

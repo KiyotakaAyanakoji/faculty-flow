@@ -581,5 +581,21 @@ describe('Faculty Leave Management API Test Suite (Phase 6)', () => {
       const failedRes = res1.status === 400 ? res1 : res2;
       expect(failedRes.body.error?.message || failedRes.body.message).toContain('Insufficient leave balance');
     });
+
+    it('System Admin cannot submit departmental leave requests (403 Forbidden)', async () => {
+      const res = await request(app)
+        .post('/api/leaves')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          leaveTypeId: casualLeaveTypeId,
+          startDate: '2026-12-28',
+          endDate: '2026-12-29',
+          isHalfDay: false,
+          reason: 'Admin personal day off',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error?.message || res.body.message).toMatch(/authorized to submit leave requests/i);
+    });
   });
 });

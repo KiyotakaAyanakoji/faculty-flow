@@ -80,7 +80,7 @@ export interface PersonalEvent {
   title: string;
   description: string | null;
   eventDate: string;
-  startTime: string;
+  startTime: string | null;
   endTime: string | null;
   isPersonal?: boolean;
   category?: 'Personal';

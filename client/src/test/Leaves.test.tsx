@@ -15,6 +15,18 @@ describe('Phase 6 Frontend Tests - Leave Management', () => {
     isActive: true,
   };
 
+  const mockAsstUser = {
+    id: 4,
+    email: 'asst.cs@facultyflow.local',
+    fullName: 'Claude Shannon (Assistant Professor)',
+    role: 'ASSISTANT_PROFESSOR',
+    departmentId: 1,
+    departmentName: 'Computer Science & Engineering',
+    departmentCode: 'CS',
+    canAssignWork: false,
+    isActive: true,
+  };
+
   const mockLeaveTypes = [
     {
       id: 1,
@@ -162,11 +174,13 @@ describe('Phase 6 Frontend Tests - Leave Management', () => {
         }
 
         if (url.includes('/api/auth/login')) {
+          const body = _options?.body ? JSON.parse(_options.body) : {};
+          const isAsst = body.email?.includes('asst');
           return Promise.resolve({
             ok: true,
             json: async () => ({
               success: true,
-              user: mockHodUser,
+              user: isAsst ? mockAsstUser : mockHodUser,
             }),
           });
         }
@@ -459,6 +473,43 @@ describe('Phase 6 Frontend Tests - Leave Management', () => {
 
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: /apply for leave/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('Assistant Professor can see Apply for Leave button while approval controls are hidden', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'asst.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /leaves/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /leaves/i }));
+
+    // Apply for Leave button MUST be present for Assistant Professor
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /apply for leave/i })).toBeInTheDocument();
+    });
+
+    // Approval Queue tab MUST be hidden for Assistant Professor
+    expect(screen.queryByRole('button', { name: /approval queue/i })).not.toBeInTheDocument();
+
+    // Clicking Apply for Leave opens the modal
+    fireEvent.click(screen.getByRole('button', { name: /apply for leave/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /apply for leave/i })).toBeInTheDocument();
     });
   });
 });

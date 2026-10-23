@@ -188,9 +188,10 @@ export async function submitLeaveRequest(
   try {
     const userId = req.user!.id;
     const departmentId = req.user!.departmentId;
+    const userRole = req.user?.role;
 
-    if (!departmentId) {
-      throw new AppError('You must be assigned to an academic department to submit leave requests.', 400);
+    if (!departmentId || userRole === ROLES.SYSTEM_ADMIN) {
+      throw new AppError('Only departmental faculty members are authorized to submit leave requests.', 403);
     }
 
     const parseResult = submitLeaveSchema.safeParse(req.body);

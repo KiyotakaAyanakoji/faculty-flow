@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS personal_events (
   title VARCHAR(255) NOT NULL,
   description TEXT NULL,
   event_date DATE NOT NULL,
-  start_time TIME NOT NULL,
+  start_time TIME NULL,
   end_time TIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

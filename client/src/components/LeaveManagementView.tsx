@@ -105,6 +105,12 @@ export const LeaveManagementView: React.FC = () => {
   };
 
   const isHOD = user?.role === 'HOD';
+  const canApplyForLeave =
+    user?.role !== 'SYSTEM_ADMIN' &&
+    (!!user?.departmentId ||
+      user?.role === 'HOD' ||
+      user?.role === 'PROFESSOR' ||
+      user?.role === 'ASSISTANT_PROFESSOR');
 
   const formIds = {
     applyModal: useId(),
@@ -422,14 +428,18 @@ export const LeaveManagementView: React.FC = () => {
             <span>Refresh</span>
           </button>
 
-          <button
-            id="btn-apply-leave"
-            className="btn btn-primary"
-            onClick={openApplyModal}
-          >
-            <Plus size={16} />
-            <span>Apply for Leave</span>
-          </button>
+          {canApplyForLeave && (
+            <button
+              id="btn-apply-leave"
+              data-testid="apply-leave-btn"
+              className="btn btn-primary"
+              onClick={openApplyModal}
+              title="Apply for institutional faculty leave"
+            >
+              <Plus size={16} />
+              <span>Apply for Leave</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -626,13 +636,16 @@ export const LeaveManagementView: React.FC = () => {
               <FileText size={40} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
               <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>No Leave Requests Found</h4>
               <p style={{ margin: 0, fontSize: '0.9rem' }}>You have not submitted any leave requests matching the current filter.</p>
-              <button
-                className="btn btn-primary"
-                style={{ marginTop: '1.25rem' }}
-                onClick={openApplyModal}
-              >
-                <Plus size={16} /> Apply for Leave
-              </button>
+              {canApplyForLeave && (
+                <button
+                  className="btn btn-primary"
+                  style={{ marginTop: '1.25rem' }}
+                  onClick={openApplyModal}
+                  data-testid="apply-leave-empty-btn"
+                >
+                  <Plus size={16} /> Apply for Leave
+                </button>
+              )}
             </div>
           ) : (
             <div className="table-responsive" style={{ overflowX: 'auto' }}>

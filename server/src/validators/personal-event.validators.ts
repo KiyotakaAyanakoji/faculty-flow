@@ -11,8 +11,11 @@ export const createPersonalEventSchema = z
       .string({ required_error: 'Event date is required' })
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Event date must be in YYYY-MM-DD format'),
     startTime: z
-      .string({ required_error: 'Start time is required' })
-      .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Start time must be in HH:mm format'),
+      .string()
+      .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Start time must be in HH:mm format')
+      .nullable()
+      .optional()
+      .or(z.literal('')),
     endTime: z
       .string()
       .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'End time must be in HH:mm format')
@@ -29,7 +32,7 @@ export const createPersonalEventSchema = z
   })
   .refine(
     data => {
-      if (data.startTime && data.endTime && data.endTime.trim() !== '') {
+      if (data.startTime && data.endTime && data.startTime.trim() !== '' && data.endTime.trim() !== '') {
         return data.endTime >= data.startTime;
       }
       return true;
@@ -55,7 +58,9 @@ export const updatePersonalEventSchema = z
     startTime: z
       .string()
       .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Start time must be in HH:mm format')
-      .optional(),
+      .nullable()
+      .optional()
+      .or(z.literal('')),
     endTime: z
       .string()
       .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'End time must be in HH:mm format')
@@ -72,7 +77,7 @@ export const updatePersonalEventSchema = z
   })
   .refine(
     data => {
-      if (data.startTime && data.endTime && data.endTime.trim() !== '') {
+      if (data.startTime && data.endTime && data.startTime.trim() !== '' && data.endTime.trim() !== '') {
         return data.endTime >= data.startTime;
       }
       return true;
