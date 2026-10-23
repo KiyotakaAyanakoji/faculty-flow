@@ -97,6 +97,7 @@ export const EVENT_CATEGORIES = {
   SUBMISSION: 'Submission',
   CONFERENCE: 'Conference',
   WORKSHOP: 'Workshop',
+  CLUB: 'Club',
 } as const;
 
 export type EventCategory = typeof EVENT_CATEGORIES[keyof typeof EVENT_CATEGORIES];
@@ -108,6 +109,7 @@ export const ALL_EVENT_CATEGORIES: EventCategory[] = [
   EVENT_CATEGORIES.SUBMISSION,
   EVENT_CATEGORIES.CONFERENCE,
   EVENT_CATEGORIES.WORKSHOP,
+  EVENT_CATEGORIES.CLUB,
 ];
 
 export const PARTICIPANT_STATUSES = {

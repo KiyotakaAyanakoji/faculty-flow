@@ -4,7 +4,18 @@ export type EventCategory =
   | 'Holiday'
   | 'Submission'
   | 'Conference'
-  | 'Workshop';
+  | 'Workshop'
+  | 'Club';
+
+export interface IndianHoliday {
+  id: number;
+  name: string;
+  date: string;
+  year: number;
+  holidayType: 'National Holiday' | 'Gazetted Festival';
+  description: string | null;
+  sourceKey: string;
+}
 
 export type ParticipantStatus = 'Invited' | 'Accepted' | 'Declined' | 'Tentative';
 
@@ -62,3 +73,18 @@ export interface EligibleFaculty {
   role: string;
   departmentId: number;
 }
+
+export interface PersonalEvent {
+  id: number;
+  userId: number;
+  title: string;
+  description: string | null;
+  eventDate: string;
+  startTime: string;
+  endTime: string | null;
+  isPersonal?: boolean;
+  category?: 'Personal';
+  createdAt?: string;
+  updatedAt?: string;
+}
+

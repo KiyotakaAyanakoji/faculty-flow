@@ -9,6 +9,8 @@ import { syllabusRouter } from './syllabus.routes.js';
 import { handoverRouter } from './handover.routes.js';
 import { eventRouter } from './event.routes.js';
 import { leaveRouter } from './leave.routes.js';
+import { holidayRouter } from './holiday.routes.js';
+import { personalEventRouter } from './personal-event.routes.js';
 
 export const apiRouter = Router();
 
@@ -22,5 +24,8 @@ apiRouter.use('/syllabus', syllabusRouter);
 apiRouter.use('/handovers', handoverRouter);
 apiRouter.use('/events', eventRouter);
 apiRouter.use('/leaves', leaveRouter);
+apiRouter.use('/holidays', holidayRouter);
+apiRouter.use('/personal-events', personalEventRouter);
+
 
 

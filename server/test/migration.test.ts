@@ -82,9 +82,11 @@ describe('Database Migrations & Fresh Schema Verification Suite (Phase 9)', () =
       const files = await fs.readdir(migrationsDir);
       const sqlFiles = files.filter(f => f.endsWith('.sql')).sort();
 
-      expect(sqlFiles.length).toBe(8);
+      expect(sqlFiles.length).toBe(10);
       expect(sqlFiles[0]).toBe('001_initial_schema.sql');
       expect(sqlFiles[7]).toBe('008_business_versioning_and_idempotency.sql');
+      expect(sqlFiles[8]).toBe('009_indian_festivals.sql');
+      expect(sqlFiles[9]).toBe('010_personal_events.sql');
 
       // 4. Apply all migrations in order
       for (const file of sqlFiles) {
@@ -114,11 +116,11 @@ describe('Database Migrations & Fresh Schema Verification Suite (Phase 9)', () =
         }
       }
 
-      // 5. Verify all 8 recorded in schema_migrations
+      // 5. Verify all 10 recorded in schema_migrations
       const [appliedRows] = await testConn.query<any[]>(
         'SELECT version FROM schema_migrations ORDER BY id ASC'
       );
-      expect(appliedRows.length).toBe(8);
+      expect(appliedRows.length).toBe(10);
       const recorded = appliedRows.map(r => r.version);
       expect(recorded).toEqual(sqlFiles);
 
@@ -143,6 +145,8 @@ describe('Database Migrations & Fresh Schema Verification Suite (Phase 9)', () =
         'leave_requests',
         'leave_audit_logs',
         'email_notifications',
+        'indian_holidays',
+        'personal_events',
       ];
 
       for (const table of expectedCoreTables) {

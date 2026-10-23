@@ -43,6 +43,35 @@ describe('Phase 5 Frontend Tests - Academic Calendar & Secure PDF Uploads', () =
     { id: 4, fullName: 'Claude Shannon', email: 'asst.cs@facultyflow.local', role: 'ASSISTANT_PROFESSOR', departmentId: 1 },
   ];
 
+  const mockHolidays = [
+    {
+      id: 1,
+      sourceKey: 'IN_2026_DIWALI',
+      name: 'Diwali (Deepavali)',
+      holidayDate: '2026-11-08',
+      year: 2026,
+      category: 'Festival',
+      isGazetted: true,
+      description: 'Festival of Lights',
+      significance: 'Celebrates the victory of light over darkness',
+      datasetSource: 'Ministry of Personnel Gazetted Holidays',
+    },
+  ];
+
+  const mockPersonalEvents = [
+    {
+      id: 901,
+      userId: 2,
+      title: 'Prepare Midterm Exam Solutions',
+      description: 'Review rubric and step-by-step solutions',
+      eventDate: '2026-11-15',
+      startTime: '14:00',
+      endTime: '15:30',
+      isPersonal: true,
+      category: 'Personal',
+    },
+  ];
+
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
@@ -65,11 +94,85 @@ describe('Phase 5 Frontend Tests - Academic Calendar & Secure PDF Uploads', () =
           });
         }
 
+        if (url.includes('/api/personal-events/901') && _options?.method === 'PATCH') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              message: 'Personal event updated successfully',
+            }),
+          });
+        }
+
+        if (url.includes('/api/personal-events/901') && _options?.method === 'DELETE') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              message: 'Personal event deleted successfully',
+            }),
+          });
+        }
+
+        if (url.includes('/api/personal-events') && _options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              message: 'Personal event created successfully',
+              event: {
+                id: 902,
+                userId: 2,
+                title: 'New Personal Task',
+                eventDate: '2026-11-16',
+                startTime: '09:00',
+                isPersonal: true,
+              },
+            }),
+          });
+        }
+
+        if (url.includes('/api/personal-events')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              events: mockPersonalEvents,
+              total: 1,
+            }),
+          });
+        }
+
+        if (url.includes('/api/holidays')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              holidays: mockHolidays,
+              total: 1,
+              dataset: {
+                source: 'Ministry of Personnel, Public Grievances and Pensions',
+                yearsCovered: [2025, 2026, 2027],
+              },
+            }),
+          });
+        }
+
         if (url.includes('/api/events/eligible-participants')) {
           return Promise.resolve({
             ok: true,
             json: async () => ({
               faculty: mockFaculty,
+            }),
+          });
+        }
+
+        if (url.includes('/api/events/501') && _options?.method === 'PATCH') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              message: 'Academic event updated successfully',
             }),
           });
         }
@@ -225,4 +328,239 @@ describe('Phase 5 Frontend Tests - Academic Calendar & Secure PDF Uploads', () =
       expect(screen.getByLabelText(/End Date & Time/i)).toBeInTheDocument();
     });
   });
+
+  it('displays Indian festivals toggle and allows toggling festival view', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('toggle-festivals')).toBeInTheDocument();
+    });
+
+    const toggleBtn = screen.getByTestId('toggle-festivals');
+    expect(toggleBtn).toHaveTextContent(/Festivals/i);
+
+    fireEvent.click(toggleBtn);
+  });
+
+  it('allows opening event details and editing the event via Edit Academic Event modal', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /List View/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /List View/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Distributed Systems Endterm Exam')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Distributed Systems Endterm Exam'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Edit Event/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit Event/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('edit-event-modal')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Distributed Systems Endterm Exam')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByDisplayValue('Distributed Systems Endterm Exam'), {
+      target: { value: 'Distributed Systems Advanced Exam' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('edit-event-modal')).not.toBeInTheDocument();
+    });
+  });
+
+  it('renders Add Personal Event button and opens personal event creation modal', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('add-personal-event-btn')).toBeInTheDocument();
+    });
+
+    // Click Add Personal Event
+    fireEvent.click(screen.getByTestId('add-personal-event-btn'));
+
+    // Modal appears
+    await waitFor(() => {
+      expect(screen.getByTestId('create-personal-event-modal')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Event Title/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Date/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Start Time/i)).toBeInTheDocument();
+    });
+  });
+
+  it('submits personal event form and saves event to personal calendar', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('add-personal-event-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('add-personal-event-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-personal-event-modal')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Event Title/i), {
+      target: { value: 'Review Thesis Draft' },
+    });
+    fireEvent.change(screen.getByLabelText(/Date/i), {
+      target: { value: '2026-11-18' },
+    });
+    fireEvent.change(screen.getByLabelText(/Start Time/i), {
+      target: { value: '11:00' },
+    });
+
+    fireEvent.click(screen.getByTestId('save-personal-event-btn'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('create-personal-event-modal')).not.toBeInTheDocument();
+    });
+  });
+
+  it('displays personal event in list view and allows editing', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Calendar$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Calendar$/i }));
+
+    // Switch to List View
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /List View/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /List View/i }));
+
+    // Personal event from mockPersonalEvents appears
+    await waitFor(() => {
+      expect(screen.getByText('Prepare Midterm Exam Solutions')).toBeInTheDocument();
+    });
+
+    // Click personal event card
+    fireEvent.click(screen.getByText('Prepare Midterm Exam Solutions'));
+
+    // Details modal opens
+    await waitFor(() => {
+      expect(screen.getByTestId('personal-event-details-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('edit-personal-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('delete-personal-btn')).toBeInTheDocument();
+    });
+
+    // Click Edit
+    fireEvent.click(screen.getByTestId('edit-personal-btn'));
+
+    // Edit modal appears
+    await waitFor(() => {
+      expect(screen.getByTestId('edit-personal-event-modal')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Prepare Midterm Exam Solutions')).toBeInTheDocument();
+    });
+
+    // Update title
+    fireEvent.change(screen.getByDisplayValue('Prepare Midterm Exam Solutions'), {
+      target: { value: 'Prepare Midterm Exam Solutions (Updated)' },
+    });
+
+    fireEvent.click(screen.getByTestId('update-personal-event-btn'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('edit-personal-event-modal')).not.toBeInTheDocument();
+    });
+  });
 });
+
+

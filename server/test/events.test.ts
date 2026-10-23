@@ -287,4 +287,148 @@ describe('Academic Calendar Events & Secure PDF Uploads API Test Suite (Phase 5)
 
     expect(getRes.status).toBe(404);
   });
+
+  describe('Indian Festivals & National Holidays (Batch 4)', () => {
+    it('GET /api/holidays returns Indian holidays with dataset metadata', async () => {
+      const res = await request(app)
+        .get('/api/holidays')
+        .set('Authorization', `Bearer ${profCsToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.holidays)).toBe(true);
+      expect(res.body.total).toBeGreaterThan(0);
+      expect(res.body.dataset).toBeDefined();
+      expect(res.body.dataset.source).toMatch(/Ministry of Personnel/i);
+      expect(res.body.dataset.yearsCovered).toContain(2026);
+    });
+
+    it('GET /api/holidays?year=2026 filters accurately and returns year-specific movable festivals', async () => {
+      const res = await request(app)
+        .get('/api/holidays?year=2026')
+        .set('Authorization', `Bearer ${asstCsToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      const holidays = res.body.holidays;
+      expect(holidays.length).toBeGreaterThan(0);
+
+      // Verify all returned holidays belong to year 2026
+      for (const h of holidays) {
+        expect(h.year).toBe(2026);
+      }
+
+      // Check specific movable festivals for 2026
+      const diwali = holidays.find((h: any) => h.name.includes('Diwali'));
+      expect(diwali).toBeDefined();
+      expect(diwali.date.slice(0, 10)).toBe('2026-11-08');
+
+      const holi = holidays.find((h: any) => h.name.includes('Holi'));
+      expect(holi).toBeDefined();
+      expect(holi.date.slice(0, 10)).toBe('2026-03-04');
+
+      const repDay = holidays.find((h: any) => h.name.includes('Republic Day'));
+      expect(repDay).toBeDefined();
+      expect(repDay.date.slice(0, 10)).toBe('2026-01-26');
+      expect(repDay.isGazetted).toBe(true);
+    });
+
+    it('Unauthenticated request to /api/holidays is rejected with 401', async () => {
+      const res = await request(app).get('/api/holidays');
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Shared Academic and Club Events (Batch 4)', () => {
+    it('Creates an academic event with category "Club"', async () => {
+      const res = await request(app)
+        .post('/api/events')
+        .set('Authorization', `Bearer ${hodCsToken}`)
+        .send({
+          title: '[TEST]-Coding Club Hackathon',
+          description: 'Annual competitive programming hackathon organized by ACM Student Chapter',
+          category: 'Club',
+          startTime: '2026-11-15T09:00:00Z',
+          endTime: '2026-11-15T18:00:00Z',
+          location: 'Lab 4',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.eventId).toBeDefined();
+
+      // Verify category persisted as Club
+      const eventRes = await request(app)
+        .get(`/api/events/${res.body.eventId}`)
+        .set('Authorization', `Bearer ${hodCsToken}`);
+
+      expect(eventRes.status).toBe(200);
+      expect(eventRes.body.category).toBe('Club');
+      expect(eventRes.body.title).toBe('[TEST]-Coding Club Hackathon');
+    });
+
+    it('Updates an existing shared event (PATCH /api/events/:id)', async () => {
+      // 1. Create event
+      const createRes = await request(app)
+        .post('/api/events')
+        .set('Authorization', `Bearer ${profCsToken}`)
+        .send({
+          title: '[TEST]-Initial Workshop Title',
+          description: 'Initial description',
+          category: 'Workshop',
+          startTime: '2026-11-20T10:00:00Z',
+          endTime: '2026-11-20T12:00:00Z',
+          location: 'Room 101',
+        });
+
+      const eventId = createRes.body.eventId;
+
+      // 2. Update as creator
+      const updateRes = await request(app)
+        .patch(`/api/events/${eventId}`)
+        .set('Authorization', `Bearer ${profCsToken}`)
+        .send({
+          title: '[TEST]-Updated Workshop Title',
+          location: 'Auditorium 2',
+          category: 'Conference',
+        });
+
+      expect(updateRes.status).toBe(200);
+
+      // 3. Confirm updates persisted
+      const getRes = await request(app)
+        .get(`/api/events/${eventId}`)
+        .set('Authorization', `Bearer ${profCsToken}`);
+
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.title).toBe('[TEST]-Updated Workshop Title');
+      expect(getRes.body.location).toBe('Auditorium 2');
+      expect(getRes.body.category).toBe('Conference');
+    });
+
+    it('Rejects unauthorized update to an event from faculty in another department', async () => {
+      // Create CS event
+      const createRes = await request(app)
+        .post('/api/events')
+        .set('Authorization', `Bearer ${hodCsToken}`)
+        .send({
+          title: '[TEST]-CS Private HOD Meeting',
+          category: 'Meeting',
+          startTime: '2026-11-22T10:00:00Z',
+          endTime: '2026-11-22T11:00:00Z',
+        });
+
+      const eventId = createRes.body.eventId;
+
+      // Attempt update by Mech HOD
+      const updateRes = await request(app)
+        .patch(`/api/events/${eventId}`)
+        .set('Authorization', `Bearer ${hodMechToken}`)
+        .send({
+          title: '[TEST]-Hacked Event Title',
+        });
+
+      expect(updateRes.status).toBe(403);
+    });
+  });
 });
+
