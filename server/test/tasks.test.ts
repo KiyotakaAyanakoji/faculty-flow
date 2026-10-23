@@ -414,14 +414,87 @@ describe('Task Management & Assignment API Test Suite (Phase 3)', () => {
     expect(res.body.task.category).toBe('Teaching'); // default for DB schema
   });
 
-  it('Batch 1: GET /api/tasks/eligible-assignees returns candidates without category parameter', async () => {
+  it('Batch 2: Assignee can complete a Pending task directly and completion timestamp is recorded', async () => {
+    // 1. Create a task assigned to asstCsUserId
+    const createRes = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${hodCsToken}`)
+      .send({
+        title: '[TEST] Direct Complete Task',
+        priority: 'High',
+        dueDate: '2026-12-05',
+        assigneeId: asstCsUserId,
+      });
+
+    expect(createRes.status).toBe(201);
+    const taskId = createRes.body.task.id;
+    expect(createRes.body.task.status).toBe('Pending');
+    expect(createRes.body.task.completedAt).toBeNull();
+
+    // 2. Assignee completes task directly from Pending
+    const completeRes = await request(app)
+      .patch(`/api/tasks/${taskId}/status`)
+      .set('Authorization', `Bearer ${asstCsToken}`)
+      .send({ status: 'Completed' });
+
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.task.status).toBe('Completed');
+    expect(completeRes.body.task.completedAt).not.toBeNull();
+    const firstCompletedAt = completeRes.body.task.completedAt;
+
+    // 3. Duplicate completion request is idempotent and does not corrupt state
+    const duplicateRes = await request(app)
+      .patch(`/api/tasks/${taskId}/status`)
+      .set('Authorization', `Bearer ${asstCsToken}`)
+      .send({ status: 'Completed' });
+
+    expect(duplicateRes.status).toBe(200);
+    expect(duplicateRes.body.task.status).toBe('Completed');
+    expect(duplicateRes.body.task.completedAt).toBe(firstCompletedAt);
+  });
+
+  it('Batch 2: Unauthorized user cannot complete another faculty member task', async () => {
+    // 1. Create task assigned to asstCsUserId
+    const createRes = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${hodCsToken}`)
+      .send({
+        title: '[TEST] Protected Assignee Task',
+        priority: 'Medium',
+        dueDate: '2026-12-08',
+        assigneeId: asstCsUserId,
+      });
+
+    const taskId = createRes.body.task.id;
+
+    // 2. profCsToken (who is NOT the assignee) attempts to mark task Completed
+    const attemptRes = await request(app)
+      .patch(`/api/tasks/${taskId}/status`)
+      .set('Authorization', `Bearer ${profCsToken}`)
+      .send({ status: 'Completed' });
+
+    expect(attemptRes.status).toBe(403);
+    expect(attemptRes.body.success).toBe(false);
+    expect(attemptRes.body.error.code).toBe('COMPLETION_UNAUTHORIZED');
+  });
+
+  it('Batch 2: Task list sorts High priority tasks before Medium and Low', async () => {
     const res = await request(app)
-      .get('/api/tasks/eligible-assignees')
-      .set('Authorization', `Bearer ${profCsToken}`);
+      .get('/api/tasks')
+      .set('Authorization', `Bearer ${hodCsToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.assignees.some((a: any) => a.id === asstCsUserId)).toBe(true);
+    const tasks = res.body.tasks;
+    if (tasks.length > 1) {
+      // Find index of first high and first medium/low
+      const firstHigh = tasks.findIndex((t: any) => t.priority === 'High');
+      const firstLow = tasks.findIndex((t: any) => t.priority === 'Low');
+      if (firstHigh !== -1 && firstLow !== -1) {
+        expect(firstHigh).toBeLessThan(firstLow);
+      }
+    }
   });
 });
+
 

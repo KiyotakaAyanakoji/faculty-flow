@@ -1479,6 +1479,36 @@
   color: #f87171;
 }
 
+.complete-task-btn {
+  background: rgba(16, 185, 129, 0.18) !important;
+  color: #34d399 !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.complete-task-btn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.32) !important;
+  border-color: #34d399 !important;
+  transform: translateY(-1px);
+}
+
+.complete-task-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.priority-high-card {
+  border-left: 3px solid #ef4444 !important;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(15, 23, 42, 0.6) 100%) !important;
+}
+
 /* Modals */
 .modal-backdrop {
   position: fixed;

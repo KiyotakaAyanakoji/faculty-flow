@@ -94,6 +94,27 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
         }
 
         if (url.includes('/api/auth/login')) {
+          const body = JSON.parse(_options?.body || '{}');
+          if (body.email === 'asst.cs@facultyflow.local') {
+            return Promise.resolve({
+              ok: true,
+              json: async () => ({
+                success: true,
+                user: {
+                  id: 4,
+                  email: 'asst.cs@facultyflow.local',
+                  fullName: 'Dr. Miles Dyson (Asst Prof CSE)',
+                  role: 'ASSISTANT_PROFESSOR',
+                  departmentId: 1,
+                  departmentName: 'Computer Science and Engineering',
+                  departmentCode: 'CSE',
+                  canAssignWork: false,
+                  isActive: true,
+                },
+                accessToken: 'mock_jwt_asst_token',
+              }),
+            });
+          }
           return Promise.resolve({
             ok: true,
             json: async () => ({
@@ -115,6 +136,21 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
           return Promise.resolve({
             ok: true,
             json: async () => ({ success: true, assignees: mockEligibleAssignees }),
+          });
+        }
+
+        if (_options?.method === 'PATCH' && url.includes('/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              message: 'Task status updated to Completed.',
+              task: {
+                ...mockTasks[0],
+                status: 'Completed',
+                completedAt: '2026-10-23T12:00:00Z',
+              },
+            }),
           });
         }
 
@@ -271,5 +307,45 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
     expect(screen.queryByText('Category: All')).not.toBeInTheDocument();
     expect(screen.queryByText('RBAC Matrix')).not.toBeInTheDocument();
   });
+
+  it('Batch 2: Complete Task button appears for assigned faculty and marks task completed', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    // Login as Assistant Professor (id: 4, who is assignee of Operating Systems Lab Grading)
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'asst.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Tasks/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Tasks/i }));
+
+    // Verify task is loaded and Complete Task button is visible
+    await waitFor(() => {
+      expect(screen.getByText('Operating Systems Lab Grading')).toBeInTheDocument();
+    });
+
+    const completeBtn = screen.getByRole('button', { name: /Complete Task/i });
+    expect(completeBtn).toBeInTheDocument();
+
+    // Click Complete Task
+    fireEvent.click(completeBtn);
+
+    // Verify success banner appears
+    await waitFor(() => {
+      expect(screen.getByText(/Task status updated to Completed/i)).toBeInTheDocument();
+    });
+  });
 });
+
 

@@ -243,7 +243,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               </div>
               <div className="metric-number">{(data as HodDashboardData).taskMetrics.total}</div>
               <div className="metric-subtext">
-                {(data as HodDashboardData).taskMetrics.pending} Pending • {(data as HodDashboardData).taskMetrics.inProgress} In Progress
+                {(data as HodDashboardData).taskMetrics.pending} Pending • {(data as HodDashboardData).taskMetrics.inProgress} In Progress • {(data as HodDashboardData).taskMetrics.completed} Completed
               </div>
             </div>
 
@@ -411,7 +411,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               </div>
               <div className="metric-number">{(data as ProfessorDashboardData).assignedTasks.total}</div>
               <div className="metric-subtext">
-                {(data as ProfessorDashboardData).assignedTasks.pending} Pending • {(data as ProfessorDashboardData).assignedTasks.inProgress} In Progress
+                {(data as ProfessorDashboardData).assignedTasks.pending} Pending • {(data as ProfessorDashboardData).assignedTasks.inProgress} In Progress • {(data as ProfessorDashboardData).assignedTasks.completed} Completed
               </div>
             </div>
 
@@ -532,7 +532,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               </div>
               <div className="metric-number">{(data as AssistantProfessorDashboardData).assignedTasks.total}</div>
               <div className="metric-subtext">
-                {(data as AssistantProfessorDashboardData).assignedTasks.pending} Pending • {(data as AssistantProfessorDashboardData).assignedTasks.inProgress} In Progress
+                {(data as AssistantProfessorDashboardData).assignedTasks.pending} Pending • {(data as AssistantProfessorDashboardData).assignedTasks.inProgress} In Progress • {(data as AssistantProfessorDashboardData).assignedTasks.completed} Completed
               </div>
             </div>
 

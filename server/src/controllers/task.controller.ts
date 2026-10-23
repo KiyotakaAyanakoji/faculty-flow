@@ -307,9 +307,9 @@ export async function listTasks(req: Request, res: Response, next: NextFunction)
     );
     const total = Number(countRows[0].total);
 
-    // Data query with ordering
+    // Data query with ordering: High priority tasks first, then by due date
     const [rows] = await pool.query<any[]>(
-      `${TASK_SELECT_QUERY} ${whereClause} ORDER BY t.due_date ASC, t.created_at DESC LIMIT ? OFFSET ?`,
+      `${TASK_SELECT_QUERY} ${whereClause} ORDER BY FIELD(t.priority, 'High', 'Medium', 'Low'), t.due_date ASC, t.created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
 
@@ -698,14 +698,21 @@ export async function updateTaskStatus(req: Request, res: Response, next: NextFu
     const isCreator = task.creator_id === req.user.id;
     const isHOD = req.user.role === ROLES.HOD;
 
+    // Only the assigned faculty member can complete their assigned task
+    if (status === 'Completed' && !isAssignee) {
+      return next(new AppError('Only the assigned faculty member can complete this task.', 403, 'COMPLETION_UNAUTHORIZED'));
+    }
+
     if (!isAssignee && !isCreator && !isHOD) {
       return next(new AppError('You do not have permission to update this task status.', 403, 'STATUS_UPDATE_DENIED'));
     }
 
     // Determine completion timestamp
     let completedAtUpdate = '';
-    if (status === 'Completed' && task.status !== 'Completed') {
-      completedAtUpdate = ', completed_at = NOW()';
+    if (status === 'Completed') {
+      if (task.status !== 'Completed') {
+        completedAtUpdate = ', completed_at = NOW()';
+      }
     } else if (status !== 'Completed' && task.status === 'Completed') {
       completedAtUpdate = ', completed_at = NULL';
     }

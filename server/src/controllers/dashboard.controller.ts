@@ -278,7 +278,7 @@ export async function getDashboard(req: Request, res: Response, next: NextFuncti
         `SELECT id, title, category, priority, due_date, status
          FROM tasks
          WHERE assignee_id = ? AND department_id = ? AND status != 'Completed'
-         ORDER BY due_date ASC
+         ORDER BY FIELD(priority, 'High', 'Medium', 'Low'), due_date ASC
          LIMIT 5`,
         [userId, departmentId]
       );
@@ -385,7 +385,7 @@ export async function getDashboard(req: Request, res: Response, next: NextFuncti
         `SELECT id, title, category, priority, due_date, status
          FROM tasks
          WHERE assignee_id = ? AND department_id = ? AND status != 'Completed'
-         ORDER BY due_date ASC
+         ORDER BY FIELD(priority, 'High', 'Medium', 'Low'), due_date ASC
          LIMIT 5`,
         [userId, departmentId]
       );

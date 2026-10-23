@@ -179,7 +179,14 @@ export const TaskManagementView: React.FC = () => {
   };
 
   // Handle Status Update
+  const [submittingStatusId, setSubmittingStatusId] = useState<number | null>(null);
+
   const handleStatusChange = async (taskId: number, newStatus: TaskStatus) => {
+    if (submittingStatusId) return;
+    setSubmittingStatusId(taskId);
+    setError(null);
+    setSuccess(null);
+
     try {
       const res = await fetch(`/api/tasks/${taskId}/status`, {
         method: 'PATCH',
@@ -193,14 +200,16 @@ export const TaskManagementView: React.FC = () => {
         throw new Error(data.error?.message || 'Failed to update status');
       }
 
-      setSuccess(`Task status changed to ${newStatus}.`);
+      setSuccess(`Task status updated to ${newStatus}.`);
       if (selectedTask && selectedTask.id === taskId) {
         setSelectedTask(data.task);
       }
-      fetchTasksAndSummary();
+      await fetchTasksAndSummary();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update status';
       setError(msg);
+    } finally {
+      setSubmittingStatusId(null);
     }
   };
 
@@ -448,11 +457,12 @@ export const TaskManagementView: React.FC = () => {
             return (
               <div
                 key={task.id}
-                className={`task-item-card status-${task.status.toLowerCase().replace(' ', '-')}`}
+                className={`task-item-card status-${task.status.toLowerCase().replace(' ', '-')} ${task.priority === 'High' ? 'priority-high-card' : ''}`}
               >
                 <div className="task-item-header">
                   <div className="task-badges">
                     <span className={`priority-pill ${task.priority.toLowerCase()}`}>
+                      {task.priority === 'High' && '⚡ '}
                       {task.priority} Priority
                     </span>
                   </div>
@@ -483,34 +493,47 @@ export const TaskManagementView: React.FC = () => {
                     <Calendar size={13} />
                     <span>Due: <strong>{task.dueDate}</strong></span>
                   </div>
+                  {task.completedAt && (
+                    <div className="meta-line" style={{ color: '#34d399' }}>
+                      <CheckCircle2 size={13} />
+                      <span>Completed: <strong>{new Date(task.completedAt).toLocaleDateString()}</strong></span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="task-item-actions">
-                  {/* Status Progression Quick Buttons */}
+                  {/* Prominent Complete Task button for eligible assigned faculty on Pending or In Progress tasks */}
+                  {isAssignee && task.status !== 'Completed' && (
+                    <button
+                      id={`btn-complete-task-${task.id}`}
+                      className="action-btn complete-task-btn"
+                      onClick={() => handleStatusChange(task.id, 'Completed')}
+                      disabled={submittingStatusId === task.id}
+                      title="Mark task completed"
+                    >
+                      <CheckCircle2 size={14} className={submittingStatusId === task.id ? 'spin' : ''} />
+                      <span>{submittingStatusId === task.id ? 'Completing...' : 'Complete Task'}</span>
+                    </button>
+                  )}
+
+                  {/* Start work quick action for Pending tasks */}
                   {task.status === 'Pending' && (isAssignee || canManage) && (
                     <button
                       className="action-btn start"
                       onClick={() => handleStatusChange(task.id, 'In Progress')}
+                      disabled={submittingStatusId === task.id}
                       title="Start work"
                     >
                       <Activity size={14} /> Start
                     </button>
                   )}
 
-                  {task.status === 'In Progress' && (isAssignee || canManage) && (
-                    <button
-                      className="action-btn complete"
-                      onClick={() => handleStatusChange(task.id, 'Completed')}
-                      title="Mark task completed"
-                    >
-                      <CheckCircle2 size={14} /> Complete
-                    </button>
-                  )}
-
+                  {/* Reopen action for managers */}
                   {task.status === 'Completed' && canManage && (
                     <button
                       className="action-btn revert"
                       onClick={() => handleStatusChange(task.id, 'In Progress')}
+                      disabled={submittingStatusId === task.id}
                       title="Reopen task"
                     >
                       <RefreshCw size={14} /> Reopen
@@ -720,6 +743,18 @@ export const TaskManagementView: React.FC = () => {
             </div>
 
             <div className="modal-actions">
+              {selectedTask.assignee.id === user.id && selectedTask.status !== 'Completed' && (
+                <button
+                  id="btn-complete-task-detail"
+                  className="submit-btn"
+                  onClick={() => handleStatusChange(selectedTask.id, 'Completed')}
+                  disabled={submittingStatusId === selectedTask.id}
+                  style={{ background: '#10b981', borderColor: '#059669' }}
+                >
+                  <CheckCircle2 size={16} className={submittingStatusId === selectedTask.id ? 'spin' : ''} />
+                  <span>{submittingStatusId === selectedTask.id ? 'Completing...' : 'Complete Task'}</span>
+                </button>
+              )}
               <button className="cancel-btn" onClick={() => setSelectedTask(null)}>
                 Close
               </button>
