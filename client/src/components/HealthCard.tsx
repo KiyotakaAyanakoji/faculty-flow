@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Activity, Database, Server, RefreshCw, CheckCircle2, AlertTriangle, XCircle, Clock } from 'lucide-react';
+import { getApiUrl } from '../config/api';
 
 interface HealthResponse {
   status: 'ok' | 'degraded' | string;
@@ -28,8 +29,7 @@ export const HealthCard: React.FC = () => {
     const start = performance.now();
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '/api';
-      const endpoint = apiUrl.endsWith('/') ? `${apiUrl}health` : `${apiUrl}/health`;
+      const endpoint = getApiUrl('/api/health');
       
       const res = await fetch(endpoint, {
         headers: { Accept: 'application/json' },

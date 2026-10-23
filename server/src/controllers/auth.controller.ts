@@ -92,17 +92,20 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
 
     // Set secure HttpOnly cookies
     const isProd = env.NODE_ENV === 'production';
+    const sameSite = env.COOKIE_SAME_SITE;
+    const secure = isProd || sameSite === 'none';
+
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
+      secure,
+      sameSite,
       maxAge: 15 * 60 * 1000, // 15 mins
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
+      secure,
+      sameSite,
       path: '/api/auth',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -149,9 +152,13 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
       });
     }
 
-    // Clear cookies
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken', { path: '/api/auth' });
+    // Clear cookies with matching secure and sameSite attributes
+    const isProd = env.NODE_ENV === 'production';
+    const sameSite = env.COOKIE_SAME_SITE;
+    const secure = isProd || sameSite === 'none';
+
+    res.clearCookie('accessToken', { httpOnly: true, secure, sameSite });
+    res.clearCookie('refreshToken', { path: '/api/auth', httpOnly: true, secure, sameSite });
 
     res.status(200).json({
       success: true,
@@ -203,17 +210,20 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
     );
 
     const isProd = env.NODE_ENV === 'production';
+    const sameSite = env.COOKIE_SAME_SITE;
+    const secure = isProd || sameSite === 'none';
+
     res.cookie('accessToken', newAccessToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
+      secure,
+      sameSite,
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie('refreshToken', newRefreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
+      secure,
+      sameSite,
       path: '/api/auth',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });

@@ -28,10 +28,12 @@ const server = app.listen(PORT, async () => {
     console.warn('Note: Database can be started anytime without restarting the server.');
   }
 
-  // Start background notification queue worker
-  if (env.NODE_ENV !== 'test') {
+  // Start background notification queue worker if enabled
+  if (env.NODE_ENV !== 'test' && env.RUN_NOTIFICATION_WORKER) {
     notificationWorker.start();
     console.log('Notification queue worker started.');
+  } else if (!env.RUN_NOTIFICATION_WORKER) {
+    console.log('Notification queue worker disabled on this API instance (RUN_NOTIFICATION_WORKER=false).');
   }
 });
 

@@ -19,14 +19,43 @@ export function createApp(): Express {
     next();
   });
 
-  const allowedOrigins = env.NODE_ENV === 'production'
-    ? [env.CLIENT_URL]
-    : [env.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'];
+  // Resolve configured origins
+  const configuredOrigins = [
+    ...env.CLIENT_URL.split(',').map(s => s.trim()).filter(Boolean),
+    ...(env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean) : [])
+  ];
+
+  if (env.NODE_ENV !== 'production') {
+    if (!configuredOrigins.includes('http://localhost:5173')) configuredOrigins.push('http://localhost:5173');
+    if (!configuredOrigins.includes('http://127.0.0.1:5173')) configuredOrigins.push('http://127.0.0.1:5173');
+    if (!configuredOrigins.includes('http://localhost:3000')) configuredOrigins.push('http://localhost:3000');
+  }
+
+  // Compile Vercel preview domain pattern if enabled
+  const previewRegex = env.ALLOW_VERCEL_PREVIEWS
+    ? (env.VERCEL_PREVIEW_DOMAIN_PATTERN
+        ? new RegExp(env.VERCEL_PREVIEW_DOMAIN_PATTERN)
+        : /^https:\/\/([a-z0-9-]+-)*faculty-flow.*\.vercel\.app$/)
+    : null;
+
+  const isOriginAllowed = (origin: string | undefined): boolean => {
+    // Allow non-browser requests (e.g., server-side health checks, curl, Postman)
+    if (!origin) return true;
+    if (configuredOrigins.includes(origin)) return true;
+    if (previewRegex && previewRegex.test(origin)) return true;
+    return false;
+  };
 
   // CORS configuration
   app.use(
     cors({
-      origin: allowedOrigins,
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Idempotency-Key'],

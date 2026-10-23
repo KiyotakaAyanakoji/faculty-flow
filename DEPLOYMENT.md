@@ -398,3 +398,284 @@ gunzip < /var/backups/facultyflow/facultyflow_db_20261023_000000.sql.gz | mysql 
 | **SMTP Mail Relay Provisioning** | Email | **Requires Operator Configuration** | Operator must provide valid SMTP credentials and verify DNS SPF/DKIM |
 | **Production Database Setup** | Database | **Requires Operator Configuration** | Operator must provision MySQL 8.0 instance and run `npm run db:migrate` |
 | **Final Manual Acceptance Test** | QA | **Requires External Integration Testing** | Perform smoke tests post-provisioning prior to user traffic cutover |
+
+---
+
+## 11. Mandatory Deployment Target: Vercel + Railway Architecture Guide
+
+This section specifies the production hosting architecture for **Faculty Flow 2.0**:
+- **Frontend**: Vercel (React + Vite + TypeScript Single-Page Application).
+- **Backend API**: Railway (Node.js + Express + TypeScript on persistent container).
+- **Database**: Railway MySQL (Private internal networking).
+- **Email Worker**: Long-running Railway process (embedded in API instance or dedicated worker service).
+- **Private PDF Storage**: Railway Persistent Volume mounted at `/app/uploads`.
+
+```
+                        +----------------------------------+
+                        |      Vercel Edge Network         |
+                        |      (React 18 + Vite SPA)       |
+                        |  https://faculty-flow.vercel.app |
+                        +----------------+-----------------+
+                                         |
+                                         | HTTPS (VITE_API_URL / CORS)
+                                         v
+                        +----------------------------------+
+                        |      Railway App Container       |
+                        |     (Express API + Worker)       |
+                        | https://<railway>.up.railway.app |
+                        +--------+----------------+--------+
+                                 |                |
+             Private WireGuard   |                |  Volume Mount
+             mysql.railway.internal               |  /app/uploads
+                                 v                v
+                        +----------------+  +--------------+
+                        | Railway MySQL  |  | Railway      |
+                        | 8.0 Database   |  | Persistent   |
+                        | (Private Net)  |  | Volume       |
+                        +----------------+  +--------------+
+```
+
+---
+
+### A. Vercel Frontend Configuration
+
+#### 1. Repository Setup & Project Settings
+When importing the `faculty-flow` repository into Vercel:
+
+| Setting | Value | Notes |
+| :--- | :--- | :--- |
+| **Framework Preset** | `Vite` | Auto-detects Vite configuration |
+| **Root Directory** | `client` | Standard recommendation for monorepos |
+| **Build Command** | `npm run build` | Runs `tsc && vite build` inside `client/` |
+| **Output Directory** | `dist` | Generated static bundle |
+| **Install Command** | `npm install` | Installs client dependencies |
+
+> **Alternative (Monorepo Root):** If Root Directory is left as `.`, Vercel uses the committed root `vercel.json` with Build Command `npm run build --workspace=client` and Output Directory `client/dist`.
+
+#### 2. SPA Client-Side Routing Fallback
+Both `client/vercel.json` and root `vercel.json` are committed to the repository, configuring SPA routing:
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+This ensures direct navigation and browser refreshes on routes like `/calendar`, `/tasks`, `/leaves`, and `/handovers` load the SPA index instead of returning HTTP 404.
+
+#### 3. Frontend Environment Variables
+Configure the following in **Vercel Project Settings > Environment Variables**:
+
+| Variable | Environment | Example Value | Description |
+| :--- | :--- | :--- | :--- |
+| `VITE_API_URL` | Production, Preview | `https://faculty-flow-production.up.railway.app` | **Public build-time value.** Base URL for the Railway backend API. |
+
+> [!IMPORTANT]
+> `VITE_API_URL` is baked into client assets at build time. Never place secrets or private keys in any `VITE_*` variable.
+
+---
+
+### B. Railway Backend API & Database Configuration
+
+#### 1. Railway MySQL Database Provisioning
+1. In your Railway project, click **New > Database > Add MySQL**.
+2. Railway creates a private MySQL 8.0 instance and automatically sets the following service variables:
+   - `MYSQLHOST`: `mysql.railway.internal` (Private network DNS)
+   - `MYSQLPORT`: `3306`
+   - `MYSQLUSER`: `root`
+   - `MYSQLPASSWORD`: *Secure random password*
+   - `MYSQLDATABASE`: `railway`
+   - `MYSQL_URL`: `mysql://root:...@mysql.railway.internal:3306/railway`
+3. **Keep MySQL Private**: Do **NOT** generate a public domain for MySQL unless external administrative access is required. The backend connects directly over Railway's private WireGuard network via `mysql.railway.internal`.
+
+#### 2. Railway API Service Setup
+1. In the same Railway project, click **New > GitHub Repo > select faculty-flow**.
+2. Railway detects the root `railway.json` committed to the repository:
+   ```json
+   {
+     "$schema": "https://railway.app/railway.schema.json",
+     "build": {
+       "builder": "NIXPACKS",
+       "buildCommand": "npm run build --workspace=server"
+     },
+     "deploy": {
+       "startCommand": "npm run start --workspace=server",
+       "healthcheckPath": "/api/health",
+       "healthcheckTimeout": 100,
+       "restartPolicyType": "ON_FAILURE",
+       "restartPolicyMaxRetries": 10
+     }
+   }
+   ```
+3. Railway automatically injects `PORT`. Express listens dynamically on `process.env.PORT`.
+4. Railway monitors `/api/health` before routing live web traffic to the container.
+
+#### 3. Railway Persistent Private PDF Storage
+1. In the Railway API service dashboard, navigate to **Settings > Volumes > Add Volume**.
+2. Set Mount Path: `/app/uploads`.
+3. Add environment variable to the API service:
+   ```env
+   EVENT_UPLOAD_DIR=/app/uploads
+   ```
+4. **Verification**: PDF uploads are saved to this persistent volume. Files survive application redeployments, restarts, and container rebuilds.
+
+> [!CAUTION]
+> **Production Gate**: Do NOT launch production without a Persistent Volume mounted to `EVENT_UPLOAD_DIR`. Local container files are ephemeral and will be destroyed upon every redeployment.
+
+#### 4. Background Email Worker Options on Railway
+Railway services are long-running persistent containers (not serverless functions). You have two operational options:
+
+- **Option 1: In-Process Worker (Default & Recommended for single instances)**
+  - Keep `RUN_NOTIFICATION_WORKER=true` (default).
+  - The worker starts automatically with Express, gracefully shuts down on `SIGTERM`, and uses MySQL atomic row leasing (`locked_by`, `locked_at`) to safely process the queue.
+  - Zero additional cost; no duplicate service needed.
+
+- **Option 2: Dedicated Worker Service (For horizontally scaled web tiers)**
+  - If you scale the API service to multiple replicas:
+    1. Set `RUN_NOTIFICATION_WORKER=false` on the web API service.
+    2. Add a second service from the same repo in Railway.
+    3. Set Start Command: `npm run worker --workspace=server`.
+    4. Connect the same database environment variables.
+    5. This guarantees that exactly one dedicated worker process consumes email notifications.
+
+#### 5. Railway Backend Environment Variables Reference
+Configure the following in **Railway API Service > Variables**:
+
+```env
+# Runtime
+NODE_ENV=production
+
+# CORS & Domain Configuration
+CLIENT_URL=https://faculty-flow.vercel.app
+ALLOWED_ORIGINS=https://faculty-flow.vercel.app
+ALLOW_VERCEL_PREVIEWS=false
+
+# Cross-Site Cookie Authentication
+COOKIE_SAME_SITE=none
+COOKIE_SECRET=generate_at_least_32_characters_random_hex_string
+
+# Database (Automatically mapped from Railway MySQL)
+DB_HOST=${{MySQL.MYSQLHOST}}
+DB_PORT=${{MySQL.MYSQLPORT}}
+DB_USER=${{MySQL.MYSQLUSER}}
+DB_PASSWORD=${{MySQL.MYSQLPASSWORD}}
+DB_NAME=${{MySQL.MYSQLDATABASE}}
+DB_CONNECTION_LIMIT=15
+
+# Security Secrets (Generate using crypto.randomBytes(32).toString('hex'))
+JWT_SECRET=generate_at_least_32_characters_random_hex_string
+JWT_EXPIRES_IN=15m
+REFRESH_TOKEN_EXPIRES_IN=7d
+
+# Private Storage
+EVENT_UPLOAD_DIR=/app/uploads
+
+# Worker
+RUN_NOTIFICATION_WORKER=true
+
+# Email Notifications (Disabled until verified SMTP credentials provided)
+EMAIL_ENABLED=false
+SMTP_HOST=smtp.mailgun.org
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM="Faculty Flow <notifications@yourinstitution.edu>"
+```
+
+---
+
+### C. Step-by-Step Deployment Order of Operations
+
+To avoid configuration race conditions, execute the deployment in this exact order:
+
+```
+[1. Provision Railway MySQL]
+            |
+            v
+[2. Run Migrations 001-008 via Railway CLI]
+            |
+            v
+[3. Attach Persistent Volume to Railway Service (/app/uploads)]
+            |
+            v
+[4. Deploy Railway Backend API & Verify /api/health]
+            |
+            v
+[5. Deploy Vercel Frontend (VITE_API_URL = Railway URL)]
+            |
+            v
+[6. Update Railway CLIENT_URL with Vercel Domain]
+            |
+            v
+[7. Perform End-to-End Acceptance Smoke Test]
+```
+
+#### Step 1: Provision Railway MySQL
+1. Add MySQL service in Railway.
+2. Confirm the private network host `mysql.railway.internal` is ready.
+
+#### Step 2: Run Database Migrations in Controlled Fashion
+Never run migrations automatically on container boot in multi-replica production.
+1. Install Railway CLI locally: `npm i -g @railway/cli`.
+2. Link project: `railway link`.
+3. Execute migrations from local terminal against the Railway database:
+   ```bash
+   railway run npm run db:migrate --workspace=server
+   ```
+4. Verify migration output: Migrations `001` through `008` applied cleanly.
+5. Confirm no migrations are pending.
+
+#### Step 3: Attach Persistent Storage Volume
+1. In Railway API service settings, add a Volume mounted at `/app/uploads`.
+2. Set `EVENT_UPLOAD_DIR=/app/uploads`.
+
+#### Step 4: Deploy Railway Backend API Service
+1. Set all required environment variables in Railway.
+2. Trigger deployment.
+3. Observe build logs: `npm run build --workspace=server` finishes with exit code 0.
+4. Verify health check:
+   ```bash
+   curl -s https://<your-railway-app>.up.railway.app/api/health
+   ```
+   Must return HTTP 200 with `"status": "ok"` and `"database": {"status": "connected"}`.
+
+#### Step 5: Deploy Frontend to Vercel
+1. Import repository in Vercel with Root Directory `client`.
+2. Set environment variable `VITE_API_URL=https://<your-railway-app>.up.railway.app`.
+3. Deploy to production.
+4. Note your assigned Vercel URL (e.g., `https://faculty-flow.vercel.app`).
+
+#### Step 6: Configure CORS in Railway Backend
+1. Go back to Railway API Service > Variables.
+2. Update `CLIENT_URL` with your exact Vercel production URL:
+   ```env
+   CLIENT_URL=https://faculty-flow.vercel.app
+   ```
+3. If using PR preview deployments, set `ALLOW_VERCEL_PREVIEWS=true`.
+4. Railway will automatically redeploy the service with updated CORS rules.
+
+#### Step 7: Acceptance Smoke Test
+1. Open the Vercel frontend in your browser.
+2. Verify the System Health card shows API connected and Database connected.
+3. Perform test login, create an academic event, upload a sample PDF, download the PDF, request leave, and confirm logout.
+
+---
+
+### D. Operational Readiness & Gated Blockers Summary
+
+| Subsystem | Target Platform | Current Status | Required Action Prior to Go-Live |
+| :--- | :--- | :---: | :--- |
+| **Frontend Codebase** | Vercel | **Ready** | Connect repo, set Root Directory: `client`, configure `VITE_API_URL` |
+| **Backend Codebase** | Railway | **Ready** | Connect repo, verify `railway.json`, configure environment secrets |
+| **Database Migrations**| Railway MySQL | **Ready** | Run `railway run npm run db:migrate --workspace=server` |
+| **CORS & Auth Cookies** | Vercel + Railway | **Ready** | Set `COOKIE_SAME_SITE=none` on Railway for cross-domain credentials |
+| **PDF Document Storage**| Railway Volume | **GATED BLOCKER** | **Must attach persistent volume to `/app/uploads` before uploading live files** |
+| **Email Delivery** | SMTP Relay | **GATED BLOCKER** | **Keep `EMAIL_ENABLED=false` until authorized SMTP credentials are provided** |
+| **Database Backups** | Railway MySQL | **Requires Operator** | Enable automated daily database backups in Railway dashboard |
+
