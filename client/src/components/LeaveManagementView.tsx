@@ -59,6 +59,7 @@ export const LeaveManagementView: React.FC = () => {
 
   // Apply Modal state
   const [isApplyModalOpen, setIsApplyModalOpen] = useState<boolean>(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [selectedTypeId, setSelectedTypeId] = useState<number>(0);
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -69,6 +70,7 @@ export const LeaveManagementView: React.FC = () => {
   const [calcLoading, setCalcLoading] = useState<boolean>(false);
 
   // Decision Modal state
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionModal, setDecisionModal] = useState<{
     isOpen: boolean;
     request: LeaveRequest | null;
@@ -82,6 +84,7 @@ export const LeaveManagementView: React.FC = () => {
   });
 
   // Cancel Confirmation state
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelModal, setCancelModal] = useState<{
     isOpen: boolean;
     requestId: number | null;
@@ -91,6 +94,15 @@ export const LeaveManagementView: React.FC = () => {
     requestId: null,
     notes: '',
   });
+
+  const openApplyModal = () => {
+    setApplyError(null);
+    setError(null);
+    if ((selectedTypeId === 0 || !selectedTypeId) && leaveTypes.length > 0) {
+      setSelectedTypeId(leaveTypes[0].id);
+    }
+    setIsApplyModalOpen(true);
+  };
 
   const isHOD = user?.role === 'HOD';
 
@@ -213,18 +225,42 @@ export const LeaveManagementView: React.FC = () => {
   // Handle Submit Leave Request
   const handleSubmitLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setActionLoading(true);
+    setApplyError(null);
     setError(null);
     setSuccessMessage(null);
 
+    const effectiveTypeId = selectedTypeId || (leaveTypes.length > 0 ? leaveTypes[0].id : 0);
+    if (!effectiveTypeId) {
+      setApplyError('Please select a valid leave type.');
+      return;
+    }
+    if (!startDate) {
+      setApplyError('Please select a start date.');
+      return;
+    }
+    if (!isHalfDay && !endDate) {
+      setApplyError('Please select an end date.');
+      return;
+    }
+    if (!isHalfDay && new Date(endDate) < new Date(startDate)) {
+      setApplyError('End date cannot precede start date.');
+      return;
+    }
+    if (reason.trim().length < 5) {
+      setApplyError('Please provide a reason of at least 5 characters.');
+      return;
+    }
+
+    setActionLoading(true);
+
     try {
       const payload = {
-        leaveTypeId: selectedTypeId,
+        leaveTypeId: effectiveTypeId,
         startDate,
         endDate: isHalfDay ? startDate : endDate,
         isHalfDay,
         halfDayPeriod: isHalfDay ? halfDayPeriod : null,
-        reason,
+        reason: reason.trim(),
       };
 
       const res = await fetch('/api/leaves', {
@@ -244,13 +280,14 @@ export const LeaveManagementView: React.FC = () => {
 
       setSuccessMessage('Your leave request has been submitted successfully.');
       setIsApplyModalOpen(false);
+      setApplyError(null);
       setReason('');
       setStartDate('');
       setEndDate('');
       setIsHalfDay(false);
       fetchData();
     } catch (err: any) {
-      setError(err.message);
+      setApplyError(err.message || 'Failed to submit leave request');
     } finally {
       setActionLoading(false);
     }
@@ -260,6 +297,7 @@ export const LeaveManagementView: React.FC = () => {
   const handleDecision = async () => {
     if (!decisionModal.request) return;
     setActionLoading(true);
+    setDecisionError(null);
     setError(null);
     setSuccessMessage(null);
 
@@ -284,9 +322,10 @@ export const LeaveManagementView: React.FC = () => {
 
       setSuccessMessage(`Leave request successfully marked as ${decisionModal.action}.`);
       setDecisionModal({ isOpen: false, request: null, action: 'Approved', notes: '' });
+      setDecisionError(null);
       fetchData();
     } catch (err: any) {
-      setError(err.message);
+      setDecisionError(err.message || 'Failed to submit decision');
     } finally {
       setActionLoading(false);
     }
@@ -296,6 +335,7 @@ export const LeaveManagementView: React.FC = () => {
   const handleCancelRequest = async () => {
     if (!cancelModal.requestId) return;
     setActionLoading(true);
+    setCancelError(null);
     setError(null);
     setSuccessMessage(null);
 
@@ -317,9 +357,10 @@ export const LeaveManagementView: React.FC = () => {
 
       setSuccessMessage('Leave request cancelled successfully. Any reserved balances have been restored.');
       setCancelModal({ isOpen: false, requestId: null, notes: '' });
+      setCancelError(null);
       fetchData();
     } catch (err: any) {
-      setError(err.message);
+      setCancelError(err.message || 'Failed to cancel leave request');
     } finally {
       setActionLoading(false);
     }
@@ -384,10 +425,7 @@ export const LeaveManagementView: React.FC = () => {
           <button
             id="btn-apply-leave"
             className="btn btn-primary"
-            onClick={() => {
-              setIsApplyModalOpen(true);
-              setError(null);
-            }}
+            onClick={openApplyModal}
           >
             <Plus size={16} />
             <span>Apply for Leave</span>
@@ -591,7 +629,7 @@ export const LeaveManagementView: React.FC = () => {
               <button
                 className="btn btn-primary"
                 style={{ marginTop: '1.25rem' }}
-                onClick={() => setIsApplyModalOpen(true)}
+                onClick={openApplyModal}
               >
                 <Plus size={16} /> Apply for Leave
               </button>
@@ -671,6 +709,7 @@ export const LeaveManagementView: React.FC = () => {
                               className="btn btn-secondary btn-sm"
                               style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
                               onClick={() => {
+                                setCancelError(null);
                                 setCancelModal({ isOpen: true, requestId: req.id, notes: '' });
                               }}
                               title="Cancel Leave Request"
@@ -771,6 +810,7 @@ export const LeaveManagementView: React.FC = () => {
                             className="btn btn-sm"
                             style={{ background: '#10b981', color: '#fff', border: 'none' }}
                             onClick={() => {
+                              setDecisionError(null);
                               setDecisionModal({
                                 isOpen: true,
                                 request: req,
@@ -788,6 +828,7 @@ export const LeaveManagementView: React.FC = () => {
                             className="btn btn-sm btn-secondary"
                             style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
                             onClick={() => {
+                              setDecisionError(null);
                               setDecisionModal({
                                 isOpen: true,
                                 request: req,
@@ -822,6 +863,36 @@ export const LeaveManagementView: React.FC = () => {
                 <X size={18} />
               </button>
             </div>
+
+            {applyError && (
+              <div
+                className="alert alert-danger"
+                id="apply-modal-error"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  marginBottom: '1.25rem',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#ef4444',
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: '0.9rem' }}>{applyError}</span>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => setApplyError(null)}
+                  title="Dismiss"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSubmitLeave} id={formIds.applyModal}>
               {/* Leave Type Selector */}
@@ -1020,6 +1091,36 @@ export const LeaveManagementView: React.FC = () => {
               )}
             </h3>
 
+            {decisionError && (
+              <div
+                className="alert alert-danger"
+                id="decision-modal-error"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  marginBottom: '1rem',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#ef4444',
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: '0.9rem' }}>{decisionError}</span>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => setDecisionError(null)}
+                  title="Dismiss"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.5 }}>
               You are about to mark the leave request for <strong>{decisionModal.request.requester_name}</strong> ({decisionModal.request.days_count} days of {decisionModal.request.leave_type_name}) as <strong>{decisionModal.action}</strong>.
             </p>
@@ -1071,6 +1172,36 @@ export const LeaveManagementView: React.FC = () => {
             <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.2rem', fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <ShieldAlert size={20} /> Cancel Leave Request
             </h3>
+
+            {cancelError && (
+              <div
+                className="alert alert-danger"
+                id="cancel-modal-error"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  marginBottom: '1rem',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#ef4444',
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: '0.9rem' }}>{cancelError}</span>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => setCancelError(null)}
+                  title="Dismiss"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
               Are you sure you want to cancel this leave request? Any reserved or deducted leave balance will be restored automatically.

@@ -397,4 +397,69 @@ describe('Phase 6 Frontend Tests - Leave Management', () => {
       expect(screen.queryByText(/confirm leave approval/i)).not.toBeInTheDocument();
     });
   });
+
+  it('displays validation errors visibly inside Apply for Leave modal', async () => {
+    render(<App />);
+
+    // Authenticate
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /leaves/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /leaves/i }));
+
+    // Open Apply for Leave Modal
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /apply for leave/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /apply for leave/i }));
+
+    // Verify modal is open
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /apply for leave/i })).toBeInTheDocument();
+    });
+
+    // Enter start date and end date where end date is before start date
+    fireEvent.change(screen.getByLabelText(/start date \*/i), {
+      target: { value: '2026-11-20' },
+    });
+    fireEvent.change(screen.getByLabelText(/end date \*/i), {
+      target: { value: '2026-11-15' },
+    });
+    fireEvent.change(screen.getByLabelText(/reason for leave \*/i), {
+      target: { value: 'Valid reason here' },
+    });
+
+    const submitBtn = screen.getByRole('button', { name: /submit request/i });
+    const form = submitBtn.closest('form')!;
+    fireEvent.submit(form);
+
+    // Verify error is rendered visibly inside the modal
+    await waitFor(() => {
+      expect(screen.getByText(/end date cannot precede start date/i)).toBeInTheDocument();
+    });
+
+    // Fix end date and verify submit succeeds and modal closes
+    fireEvent.change(screen.getByLabelText(/end date \*/i), {
+      target: { value: '2026-11-21' },
+    });
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /apply for leave/i })).not.toBeInTheDocument();
+    });
+  });
 });
+
