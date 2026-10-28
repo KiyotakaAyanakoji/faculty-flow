@@ -154,6 +154,32 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
           });
         }
 
+        if (_options?.method === 'PATCH' && url.includes('/assign')) {
+          const body = JSON.parse(_options?.body || '{}');
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              message: 'Task reassigned successfully.',
+              task: {
+                ...mockTasks[0],
+                assigneeId: body.assigneeId,
+                assignee: { id: body.assigneeId, fullName: 'Dr. Miles Dyson (Asst Prof CSE)', role: 'ASSISTANT_PROFESSOR' },
+              },
+            }),
+          });
+        }
+
+        if (_options?.method === 'DELETE' && url.includes('/api/tasks/')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              message: 'Task deleted successfully.',
+            }),
+          });
+        }
+
         if (url.includes('/api/tasks')) {
           return Promise.resolve({
             ok: true,
@@ -344,6 +370,188 @@ describe('Phase 3 Frontend Tests - Task Management & Allocation', () => {
     // Verify success banner appears
     await waitFor(() => {
       expect(screen.getByText(/Task status updated to Completed/i)).toBeInTheDocument();
+    });
+  });
+
+  it('Redesign: Search and filter toolbar supports interactive filtering and Clear Filters', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Tasks/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Tasks/i }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Search tasks by title or description/i)).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/Search tasks by title or description/i);
+    fireEvent.change(searchInput, { target: { value: 'Operating Systems' } });
+
+    // When filters are active, Clear Filters button appears
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Clear Filters/i })).toBeInTheDocument();
+    });
+
+    // Clicking Clear Filters resets the search input
+    fireEvent.click(screen.getByRole('button', { name: /Clear Filters/i }));
+    expect(searchInput).toHaveValue('');
+  });
+
+  it('Redesign: Reassign Faculty Member dialog displays task summary, eligible faculty cards, and submits reassignment', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Tasks/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Tasks/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Operating Systems Lab Grading')).toBeInTheDocument();
+      expect(screen.getByText('Curriculum Committee Meeting')).toBeInTheDocument();
+    });
+
+    // Click Reassign icon button on second task (currently assigned to Kyle Reese)
+    const reassignButtons = screen.getAllByRole('button', { name: /Reassign faculty/i });
+    expect(reassignButtons.length).toBeGreaterThan(1);
+    fireEvent.click(reassignButtons[1]);
+
+    // Verify Reassignment dialog appears
+    await waitFor(() => {
+      expect(screen.getByText('Reassign Faculty Member')).toBeInTheDocument();
+      expect(screen.getByText(/Current Assignee/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Search eligible faculty by name or role/i)).toBeInTheDocument();
+    });
+
+    // Verify eligible candidate card is rendered
+    await waitFor(() => {
+      expect(screen.getAllByText(/Dr\. Miles Dyson/i).length).toBeGreaterThan(0);
+    });
+
+    // Submit reassignment to Miles Dyson
+    const reassignSubmitBtn = screen.getByRole('button', { name: /Reassign Task/i });
+    expect(reassignSubmitBtn).toBeInTheDocument();
+    fireEvent.click(reassignSubmitBtn);
+
+    // Verify success banner appears
+    await waitFor(() => {
+      expect(screen.getByText(/Task reassigned to Dr\. Miles Dyson/i)).toBeInTheDocument();
+    });
+  });
+
+  it('Redesign: Task Details modal displays structured information and deliverables', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Tasks/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Tasks/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Operating Systems Lab Grading')).toBeInTheDocument();
+    });
+
+    // Click on Details button on first task
+    const detailsButtons = screen.getAllByRole('button', { name: /^Details$/i });
+    expect(detailsButtons.length).toBeGreaterThan(0);
+    fireEvent.click(detailsButtons[0]);
+
+    // Verify structured details modal
+    await waitFor(() => {
+      expect(screen.getByText('Description & Deliverables:')).toBeInTheDocument();
+      expect(screen.getAllByText('Grade Mid-Term practicals for Section A and Section B students.').length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: /Close task details/i })).toBeInTheDocument();
+    });
+
+    // Close details
+    fireEvent.click(screen.getByRole('button', { name: /Close task details/i }));
+    await waitFor(() => {
+      expect(screen.queryByText('Description & Deliverables:')).not.toBeInTheDocument();
+    });
+  });
+
+  it('Redesign: Delete Task confirmation dialog prevents accidental deletion', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign In to Faculty Flow')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Institutional Email/i), {
+      target: { value: 'hod.cs@facultyflow.local' },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password@12345' },
+    });
+    fireEvent.submit(screen.getByTestId('login-form'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Tasks/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Tasks/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Operating Systems Lab Grading')).toBeInTheDocument();
+    });
+
+    // Click Delete icon button
+    const deleteButtons = screen.getAllByRole('button', { name: /Delete task/i });
+    expect(deleteButtons.length).toBeGreaterThan(0);
+    fireEvent.click(deleteButtons[0]);
+
+    // Verify confirmation modal opens
+    await waitFor(() => {
+      expect(screen.getByText('Delete Task')).toBeInTheDocument();
+      expect(screen.getByText(/Are you sure you want to permanently delete/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Confirm Delete/i })).toBeInTheDocument();
+    });
+
+    // Click Confirm Delete
+    fireEvent.click(screen.getByRole('button', { name: /Confirm Delete/i }));
+
+    // Verify success banner appears
+    await waitFor(() => {
+      expect(screen.getByText(/Task deleted successfully/i)).toBeInTheDocument();
     });
   });
 });
